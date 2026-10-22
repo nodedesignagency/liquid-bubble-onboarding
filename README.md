@@ -3,15 +3,14 @@
 A SwiftUI onboarding for **Orbit**, a friend-circle app, told in liquid bubbles. There are two
 versions; the home screen at the end lets you replay either.
 
-**v2** (the default) opens on Earth, and its glass orbs are the liquid themselves:
+**v2** (the default) is one screen, in the style of the Wabi app:
 
-1. **Your world.** Earth alone, big, swelling in with a bounce.
-2. **It starts with you.** Earth shrinks to a planet below, and you bud out of its surface like a
-   droplet and pinch off.
-3. **Your people find you.** Friends bud out of Earth one by one and melt onto your bubble.
-4. **Your world, in orbit.** Friends glide into two orbits around you going opposite ways, melting
-   into each other as they pass, and Earth, now small, orbits you too. After "Get started"
-   everything melts back into Earth, so a recording loops.
+1. Earth waits as a big glass dome rising from the bottom edge, under "Everyone you love, in one
+   orbit." Swipe up and it follows your finger.
+2. Let go and Earth flies up into a small glass orb, stretching like a drop and bending the text it
+   passes through. Your friends bubble out of its surface into a floating cluster of liquid glass.
+3. "Meet Orbit." fades in under it, with two glass buttons. "Continue" melts everything back into
+   Earth, so a recording loops.
 
 **v1** is the first story, photos on a pale lilac liquid: it starts with you, you bump into a
 friend, your circle grows, and everyone forms a ring.
@@ -37,10 +36,11 @@ launch, and "Replay v1" or "Replay v2" on the last screen plays that version.
 ## How the liquid works
 
 - **v2 glass** (`Bubbles/GlassLiquid.swift`, the `glassLiquid` shader in `Bubbles/Liquid.metal`):
-  each photo is drawn flat where its orb is, and the shader turns that layer into glass. The orbs
-  are joined with a smooth union, so close ones melt into one shape with a neck and pinch apart
-  again; the surface is an exact sphere for a lone orb; a fisheye lens bulges each photo; light
-  sits on the rim, and a soft glow in each photo's own colour surrounds the glass.
+  the photos and the headline are drawn flat into one layer, and the shader turns it into glass.
+  The orbs are joined with a smooth union, so close ones melt into one shape with a neck of clear
+  glass and pinch apart again; a lone orb is an exact sphere; a fisheye lens bulges each photo and
+  bends text behind the glass; moving orbs stretch along their motion like drops; the rim is
+  iridescent, and a soft glow in each photo's own colour surrounds the glass.
 - **v1 goo** (`Bubbles/Liquid.metal`, used by `GooLayer` in `Bubbles/BubbleStage.swift`): a per-pixel
   Metal shader, applied with `.colorEffect` over the whole stage. Every photo is a disc and every
   thread a capsule, each with the soft shoulder a Gaussian blur would give it, summed into one

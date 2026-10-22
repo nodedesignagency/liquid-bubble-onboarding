@@ -24,6 +24,8 @@ struct SpringCurve {
     static let budBouncy = SpringCurve(response: 1.0, dampingRatio: 0.66)
     /// v2: swelling with a bounce, like the reference's bloom.
     static let inflateBouncy = SpringCurve(response: 0.75, dampingRatio: 0.58)
+    /// v2: Earth settling back after the finger lets go, with a little give.
+    static let liftSettle = SpringCurve(response: 0.6, dampingRatio: 0.72)
     /// Pulls a bubble back into its parent.
     static let absorb = SpringCurve(response: 0.75, dampingRatio: 1)
     /// Deflates a bubble that is being absorbed. Slower than `absorb`, so it melts in instead of vanishing.

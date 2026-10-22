@@ -29,42 +29,51 @@ The app holds two onboardings. The home screen's "Replay v1" and "Replay v2" pic
 leave v1 as it is: it is the saved previous direction (commit 86737e4; a `v1` git tag exists
 locally, but the session proxy refused to push tags).
 
-- **v1**: the first story, photos on a pale lilac liquid fitted to the reference video. The design
-  notes below under "Design direction (v1)" are about it.
-- **v2** (current): the story opens on Earth, there are no threads at all (the user dislikes
-  them), and there is no background liquid: the glass orbs are the liquid themselves, in the
-  style of a screenshot the user shared (fisheye photo orbs with a soft glow in their own
-  colours). See "v2" below.
+- **v1**: the first story, photos on a pale lilac liquid fitted to the reference video, in pages.
+  The design notes below under "Design direction (v1)" are about it.
+- **v2** (current): one screen in the style of the Wabi app (a video the user shared): swipe up a
+  big glass Earth and your friends bubble out of it as liquid glass. No threads (the user dislikes
+  them), no background liquid: the glass orbs are the liquid themselves. See "v2" below.
 
 ## v2
 
-- Story (`OnboardingStep.v2`, scenes in `OrbitChoreography`, "MARK: v2 scenes"):
-  1. `.planet` "Your world": Earth alone, big, swelling in with a bounce.
-  2. `.rise` "It starts with you": Earth shrinks to a planet at the bottom of the stage (clear of
-     the footer) and you bud out of its surface: a droplet forms on it, Earth's outline stretches
-     into a pear, and you pinch off with a bounce.
-  3. `.gather` "Your people find you": six friends bud out of Earth one by one and settle just off
-     your edge, so the glass melts into a neck between each of them and you.
-  4. `.orbit` "Your world, in orbit": friends glide into two tall elliptical orbits around you,
-     inner clockwise, outer the other way, overlapping at the sides so they melt into each other
-     as they pass. Earth, now small, orbits you too: the world that was huge on page 1.
-  5. After "Get started": everything melts back into Earth, which swells to page 1's size, so a
-     screen recording loops.
-  The user wants something unique here, not the nine-photo ring; don't bring the ring back for v2.
-- Rendering (`Orbit/Bubbles/GlassLiquid.swift`, shader `glassLiquid` in `Liquid.metal`): every
-  photo is drawn flat 1.15x its orb (feathered beyond the orb's edge), and the shader turns the
-  layer into glass: a smooth union of the orbs (`blend` 12: orbs closer than about 8pt melt
-  together), a sphere-shaped surface, a fisheye lens (`lens` 0.42), light (a pale rim, a top
-  sheen, a glint, a bright crescent along the bottom) and a glow outside in each photo's own
-  colour. The glow colour is the most colourful tone near the photo's rim at saturation 0.38 and
-  full brightness: a grey glow on white read as a drop shadow, so it is never grey or dark.
-- Stacking in v2: smaller orbs on top, so a bud is a droplet forming on its parent's surface;
-  bubbles melting away go underneath everything (`RenderedBubble.isLeaving`).
-- Engine features added for v2: per-bubble orbits (`BubbleTarget.orbitRate`, `orbitCenter`,
-  `orbitStretch`), buds that start from the parent's surface (`budsFromSurface`), and bouncy
-  arrivals for appearing bubbles marked `jelly` (`SpringCurve.budBouncy`, `inflateBouncy`).
-- Earth is still the NASA photo (the user said to keep it for now); outside its disc the photo is
-  filled with pale blue so no black shows in the glass.
+- Screen (`Orbit/Onboarding/GlassOnboardingView.swift`), canvas `Theme.glassCanvas` (#EDEDEF,
+  close to Wabi's #ECECEC):
+  1. Gate (`.gate`): "Everyone you love, / in one orbit." at 40% height, Earth as a huge glass dome
+     rising from the bottom edge (top at about 70% height), "Swipe up to enter" just above it.
+  2. Swipe: Earth follows the finger with growing resistance (`EarthLift`). Letting go above 90pt
+     (or a flick) reveals; otherwise it springs back.
+  3. Reveal (`.reveal`): Earth flies up into a small orb (radius 30) above the title, stretching
+     like a drop as it goes and bending the headline it passes through; the headline is drawn into
+     the glass layer for that. Friends and six clear glass droplets bud out of Earth's surface one
+     by one into a floating cluster above it, each bobbing on a small circle, so neighbours keep
+     melting together and letting go. "Meet Orbit." / "Your friends, always / within reach." fade
+     in under Earth, then two glass buttons ("Continue with Apple", "Continue with phone number")
+     and a legal line.
+  4. "Continue": everything melts back into Earth, which sinks to the dome (the first frame, so a
+     recording loops), then the home screen.
+- Rendering (`Orbit/Bubbles/GlassLiquid.swift`, shader `glassLiquid` in `Liquid.metal`): photos
+  are drawn flat into one layer (95% of the orb, soft edge from 86%; the rim is clear glass), with
+  the headline over them. The layer is flattened with `.drawingGroup()` before the shader: without
+  it the shader saw each photo on its own and the user saw white squares where photos overlapped.
+  The shader: smooth union of the orbs (`blend` 12: orbs closer than about 8pt melt together into
+  a neck of clear glass), sphere-shaped surface, fisheye lens (`lens` 0.5), iridescent rim, a fine
+  light grey edge, a soft highlight and glint, the bright crescent along the bottom, and a glow in
+  each photo's own colour (never grey: grey on light reads as a drop shadow). Moving orbs stretch
+  along their motion like drops (`maxStretch` 0.42), photo and glass together; the stage measures
+  each bubble's velocity from a snapshot 1/120 s earlier.
+- Buttons: `GlassButton`, real Liquid Glass (`.glassEffect`) on iOS 26+, frosted material before.
+  Mobbin references for the layout: Dot, Genie, and a clean music app's sign-in screen.
+- Stacking: smaller orbs on top, so a bud is a droplet forming on its parent's surface; bubbles
+  melting away go underneath everything (`RenderedBubble.isLeaving`).
+- Engine features added for v2: per-bubble orbits (`orbitRate`, `orbitCenter`, `orbitStretch`),
+  buds from the parent's surface (`budsFromSurface`), bouncy arrivals and shrinks for `jelly`
+  targets (`budBouncy`, `inflateBouncy`). The engine check allows v2's Earth fling to move fast
+  (up to 24pt per 120 Hz frame); v1 keeps its 12pt limit.
+- Earth is still the NASA photo (the user said to keep it for now).
+- Tried and dropped in v2: four pages (Earth, rise, gather, orbit), a trailing drop behind Earth
+  (it broke off and read as a ghost bubble), and the nine-photo ring (the user wants something
+  that doesn't look like the reference).
 
 ## Design direction (v1)
 
@@ -158,15 +167,16 @@ SwiftUI gotchas learned on device:
   interrupted transitions, which pairs fuse at rest, thread timing versus neck release), and
   records a scripted run. On Linux, get a toolchain from download.swift.org
   (for example swift-6.1.2-RELEASE-ubuntu24.04).
-- `tools/preview/run.sh` (v1) or `VERSION=v2 tools/preview/run.sh` turns that recording into a motion preview video (needs python3 with
+- `tools/preview/run.sh` (v1, `render.py`) or `VERSION=v2 tools/preview/run.sh` (`render_v2.py`) turns that recording into a motion preview video (needs python3 with
   Pillow and NumPy, ffmpeg). It approximates the real rendering (Nunito font, approximate blur),
   so it's for judging layout and motion. Keep its copy and timings in sync with
   `OnboardingStep.swift` and `tools/engine/record.swift`.
 
 ## Open items
 
-- v2 was just built; waiting on the user's first Simulator recording of it. The `glassLiquid`
-  shader has never been compiled (no Metal toolchain in cloud sessions).
+- v2 was just rebuilt as the Wabi-style single screen; waiting on the user's Simulator recording.
+  The `glassLiquid` shader and the `.glassEffect` buttons have never been compiled here (no Metal
+  toolchain or iOS SDK in cloud sessions).
 - Globe: the NASA Earth photo has a dark rim and the user doesn't like it. Plan: generate a pastel
   lavender world-map texture with Magnific (uses the user's credits, so ask first) and spin it on a
   real 3D sphere (SceneKit) inside the Earth bubble. The user chose to decide this later.

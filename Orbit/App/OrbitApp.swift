@@ -32,14 +32,23 @@ struct RootView: View {
                 }
                 .transition(.opacity)
             } else {
-                OnboardingView(version: version) {
-                    withAnimation(.smooth(duration: 0.5)) { hasFinishedOnboarding = true }
+                Group {
+                    switch version {
+                    case .v1:
+                        OnboardingView(version: .v1) { finishOnboarding() }
+                    case .v2:
+                        GlassOnboardingView { finishOnboarding() }
+                    }
                 }
-                // A fresh onboarding, from its first page, whenever the version changes.
+                // A fresh onboarding, from its start, whenever the version changes.
                 .id(version)
                 .transition(.opacity)
             }
         }
-        .background(Theme.background.ignoresSafeArea())
+        .background((version == .v2 ? Theme.glassCanvas : Theme.background).ignoresSafeArea())
+    }
+
+    private func finishOnboarding() {
+        withAnimation(.smooth(duration: 0.5)) { hasFinishedOnboarding = true }
     }
 }

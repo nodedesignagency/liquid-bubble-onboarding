@@ -106,53 +106,77 @@ using namespace metal;
 
 /// v2: the glass orbs are the liquid themselves (used through `.layerEffect` in `GlassLiquidLayer`).
 ///
-/// The layer holds every photo, drawn flat where its orb is. This shader turns them into glass:
+/// The layer holds every photo, drawn flat where its orb is (a little inside the orb's edge, so
+/// each orb has a thin rim of clear glass), and the screen's headline. This shader turns it into
+/// glass:
 ///
 /// 1. Each orb has a height `b = (r^2 - d^2) / r`, about twice the distance inside its edge near
 ///    the rim. The orbs are joined with a smooth maximum of those heights (`blend`, in points), so
 ///    a lone orb keeps its exact circle, and two orbs closer than about 0.7 x `blend` melt into one
-///    shape with a smooth neck, then pinch apart again.
-/// 2. The surface: a lone orb is an exact sphere (height `sqrt(r^2 - d^2)`); where orbs melt
-///    together it flows smoothly between them. Its normal drives everything below.
-/// 3. A fisheye lens (`lens`): the middle of each photo is magnified and its edge compressed, so
-///    the picture bulges like a glass marble and reaches the glass's edge.
-/// 4. Light, never shadow: a little colour fringing and a pale reflection toward the rim, a sheen
-///    along the top rim, a small sharp glint, and the bright crescent along the bottom where
-///    light focuses through the glass.
-/// 5. Outside, a soft glow in each orb's own colours (`glowWidth`, `glowStrength`), always light.
+///    shape with a neck of clear glass, then pinch apart again.
+/// 2. The surface: a lone orb is an exact sphere; where orbs melt together it flows smoothly
+///    between them. Its normal drives everything below.
+/// 3. A fisheye lens (`lens`): the middle of each orb is magnified and its edge compressed, so
+///    photos bulge like glass marbles, and text behind the glass bends.
+/// 4. Light, never shadow: colour fringing and an iridescent sheen toward the rim, a fine light
+///    grey edge so clear glass reads on the canvas, a soft broad highlight and a sharp glint at
+///    the top left, and the bright crescent along the bottom where light focuses through.
+/// 5. Outside the glass the layer shows as it is (the headline), over a soft glow in each orb's
+///    own colours (`glowWidth`, `glowStrength`).
+/// 6. Moving orbs stretch along their motion like drops (keeping their area), so a fast one
+///    becomes a teardrop of glass and rounds off as it settles.
 ///
-/// `orbs` holds 6 floats per orb: x, y, r (in the view's points) and the glow colour r, g, b.
-/// Mirrored in `tools/preview/render.py` (`glass_liquid`).
+/// `orbs` holds 8 floats per orb: x, y, r (in the view's points), the glow colour r, g, b, and the
+/// stretch (sx, sy): the direction of motion, with length = how much longer the orb gets (0 = round).
+/// `interior` is the canvas colour, seen through clear glass. Mirrored in
+/// `tools/preview/render.py` (`glass_liquid`).
+/// One orb's height (see above) at `d` from its centre, and the direction it grows in (the
+/// gradient's half, divided by r), in the metric stretched along `stretch`.
+static float orbHeight(float2 d, float r, float2 stretch, thread float2 &toward) {
+    const float k = length(stretch);
+    if (k < 1e-4) {
+        toward = d / r;
+        return (r * r - dot(d, d)) / r;
+    }
+    const float2 u = stretch / k;
+    const float s = 1.0 + k;
+    const float along = dot(d, u);
+    const float2 across = d - along * u;
+    const float q = along * along / (s * s) + dot(across, across) * s;
+    toward = (along / (s * s) * u + across * s) / r;
+    return (r * r - q) / r;
+}
+
 [[ stitchable ]] half4 glassLiquid(float2 position, SwiftUI::Layer layer, float blend, float lens,
-                                   float glowWidth, float glowStrength,
+                                   float glowWidth, float glowStrength, float3 interior,
                                    device const float *orbs, int count) {
-    const int n = count / 6;
+    const half4 flat = layer.sample(position);
+    const int n = count / 8;
     if (n == 0) {
-        return half4(0.0h);
+        return flat;
     }
     float m = -1e20;
     for (int i = 0; i < n; i++) {
-        device const float *o = orbs + i * 6;
-        const float2 d = position - float2(o[0], o[1]);
-        const float r = max(o[2], 0.5);
-        m = max(m, (r * r - dot(d, d)) / r);
+        device const float *o = orbs + i * 8;
+        float2 toward;
+        m = max(m, orbHeight(position - float2(o[0], o[1]), max(o[2], 0.5), float2(o[6], o[7]), toward));
     }
-    // Far outside everything: nothing to draw, not even glow.
+    // Far outside everything: just the layer, no glow.
     if (m < -12.0 * glowWidth) {
-        return half4(0.0h);
+        return flat;
     }
     float sum = 0.0;
     float radius = 0.0;
     float2 g = float2(0.0);
     float3 glow = float3(0.0);
     for (int i = 0; i < n; i++) {
-        device const float *o = orbs + i * 6;
-        const float2 d = position - float2(o[0], o[1]);
+        device const float *o = orbs + i * 8;
         const float r = max(o[2], 0.5);
-        const float w = exp(((r * r - dot(d, d)) / r - m) / blend);
+        float2 toward;
+        const float w = exp((orbHeight(position - float2(o[0], o[1]), r, float2(o[6], o[7]), toward) - m) / blend);
         sum += w;
         radius += w * r;
-        g += w * d / r;
+        g += w * toward;
         glow += w * float3(o[3], o[4], o[5]);
     }
     radius /= sum;
@@ -163,8 +187,9 @@ using namespace metal;
     const float sd = b / max(2.0 * length(g), 1e-3);
     const float alpha = smoothstep(-0.75, 0.75, sd);
     const float halo = glowStrength * exp(-max(-sd, 0.0) / glowWidth);
+    const float4 outside = float4(flat) + float4(glow * halo, halo) * (1.0 - float(flat.a));
     if (alpha <= 0.0) {
-        return half4(half3(glow * halo), half(halo));
+        return half4(outside);
     }
 
     const float h = sqrt(max(radius * b, 0.0));
@@ -173,22 +198,29 @@ using namespace metal;
     const float2 offset = -lens * h * nrm.xy;
 
     const half4 sg = layer.sample(position + offset);
-    const half4 sr = layer.sample(position + offset * (1.0 + 0.12 * edge));
-    const half4 sb = layer.sample(position + offset * (1.0 - 0.12 * edge));
-    // The layer is premultiplied; anywhere it is see-through, the glass shows its own pale interior.
-    const float3 interior = float3(0.95, 0.95, 0.97);
+    const half4 sr = layer.sample(position + offset * (1.0 + 0.14 * edge));
+    const half4 sb = layer.sample(position + offset * (1.0 - 0.14 * edge));
+    // The layer is premultiplied; where it is see-through, the glass shows the canvas.
     float3 c = float3(float(sr.r), float(sg.g), float(sb.b)) + (1.0 - float(sg.a)) * interior;
 
-    c = mix(c, float3(0.97, 0.96, 1.0), 0.28 * edge * edge * edge);
     const float2 dir = nrm.xy / max(length(nrm.xy), 1e-4);
-    const float3 halfway = normalize(normalize(float3(0.55, -0.75, 0.55)) + float3(0.0, 0.0, 1.0));
-    const float glint = 0.85 * pow(max(dot(nrm, halfway), 0.0), 120.0);
-    const float top = 1.0 - smoothstep(-0.85, 0.1, dir.y);
-    const float sheen = 0.30 * smoothstep(0.30, 0.65, edge) * (1.0 - smoothstep(0.65, 0.95, edge)) * top;
-    const float bottom = smoothstep(0.25, 0.95, dir.y);
-    const float caustic = 0.55 * smoothstep(0.42, 0.75, edge) * (1.0 - smoothstep(0.80, 0.98, edge)) * bottom;
-    c = c + (1.0 - c) * clamp(glint + sheen + caustic, 0.0, 1.0);
+    // Iridescence toward the rim, its hue turning around the orb.
+    const float turn = atan2(dir.y, dir.x) / 6.2831853 + edge * 0.6;
+    const float3 rainbow = 0.5 + 0.5 * cos(6.2831853 * (turn + float3(0.0, 0.33, 0.67)));
+    const float band = smoothstep(0.45, 0.8, edge) * (1.0 - smoothstep(0.9, 1.0, edge));
+    c = mix(c, mix(float3(1.0), rainbow, 0.55), 0.22 * band);
+    // A pale reflection at the rim, and a fine light grey edge so clear glass reads on the canvas.
+    c = mix(c, float3(0.97, 0.97, 0.99), 0.22 * edge * edge * edge);
+    c = mix(c, interior * float3(0.86, 0.87, 0.9), 0.35 * smoothstep(0.9, 1.0, edge));
 
-    const float3 premultiplied = c * alpha + glow * halo * (1.0 - alpha);
-    return half4(half3(premultiplied), half(alpha + halo * (1.0 - alpha)));
+    const float3 light = normalize(float3(-0.45, -0.7, 0.55));
+    const float3 halfway = normalize(light + float3(0.0, 0.0, 1.0));
+    const float broad = 0.16 * pow(max(dot(nrm, light), 0.0), 6.0) * smoothstep(0.05, 0.4, edge);
+    const float glint = 0.9 * pow(max(dot(nrm, halfway), 0.0), 140.0);
+    const float bottom = smoothstep(0.25, 0.95, dir.y);
+    const float caustic = 0.55 * smoothstep(0.42, 0.75, edge) * (1.0 - smoothstep(0.82, 0.98, edge)) * bottom;
+    c = c + (1.0 - c) * clamp(broad + glint + caustic, 0.0, 1.0);
+
+    const float4 inside = float4(c, 1.0);
+    return half4(mix(outside, inside, alpha));
 }

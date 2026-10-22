@@ -22,8 +22,11 @@ fi
 VERSION="${VERSION:-v1}"
 SUFFIX=$([[ $VERSION == v2 ]] && echo "-v2" || echo "")
 rm -rf "$OUT/frames"
-VERSION=$VERSION python3 tools/preview/render.py "build/engine/frames$SUFFIX.csv" "build/engine/threads$SUFFIX.csv" \
-  Orbit/Assets.xcassets "$FONTS" "$OUT/frames"
+if [[ $VERSION == v2 ]]; then
+  python3 tools/preview/render_v2.py build/engine/frames-v2.csv Orbit/Assets.xcassets "$FONTS" "$OUT/frames"
+else
+  python3 tools/preview/render.py build/engine/frames.csv build/engine/threads.csv Orbit/Assets.xcassets "$FONTS" "$OUT/frames"
+fi
 if [[ -z "${FRAMES:-}" ]]; then
   ffmpeg -v error -y -framerate 30 -i "$OUT/frames/f_%04d.png" -vf "scale=600:-2,format=yuv420p" \
     -c:v libx264 -crf 19 -movflags +faststart "$OUT/onboarding-preview$SUFFIX.mp4"

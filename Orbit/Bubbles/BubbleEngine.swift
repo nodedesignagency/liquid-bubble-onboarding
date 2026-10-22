@@ -226,6 +226,8 @@ final class BubbleEngine {
                 track.grow = .deflate
             } else if target.jelly {
                 track.move = .jelly
+                // Swell or shrink with the same bounce, unless it is only gliding.
+                if abs(target.radius - current[id].radius) > 1 { track.grow = .inflateBouncy }
             }
 
             if reduceMotion {

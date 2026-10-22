@@ -1,7 +1,7 @@
 import Foundation
 
 func fmt(_ p: CGPoint) -> String { String(format: "(%.1f, %.1f)", Double(p.x), Double(p.y)) }
-let scenes: [OrbitScene] = [.you, .bump, .circle, .world, .collapse, .planet, .rise, .gather, .orbit]
+let scenes: [OrbitScene] = [.you, .bump, .circle, .world, .collapse, .gate, .reveal]
 var failures = 0
 func check(_ ok: Bool, _ msg: String) { if !ok { failures += 1; print("FAIL:", msg) } }
 
@@ -42,10 +42,13 @@ for scene in scenes {
     // Sideways, bubbles may run off the screen edge (the stage draws full width). Vertically they
     // must stay between the heading and the footer.
     // A bubble whose centre is itself past the stage's edge (Earth as v2's horizon) is meant to run off it.
-    // v1's liquid reaches about 24% past a photo; v2 has only a 5pt glow around the glass.
-    let isV2 = [OrbitScene.planet, .rise, .gather, .orbit].contains(scene)
+    // v1's liquid reaches about 24% past a photo and its stage sits between header and footer.
+    // v2 has only a 5pt glow around the glass and its stage is the whole screen (about 400
+    // reference points above and below the centre on an iPhone 17 Pro).
+    let isV2 = [OrbitScene.gate, .reveal].contains(scene)
     let reach = { (b: RenderedBubble) in isV2 ? b.radius + 5 : b.radius * 1.24 }
-    let tooTall = visible.filter { abs($0.center.y) + reach($0) > 242 && abs($0.center.x) - $0.radius < 201 && abs($0.center.y) <= 240 }
+    let limit: CGFloat = isV2 ? 395 : 242
+    let tooTall = visible.filter { abs($0.center.y) + reach($0) > limit && abs($0.center.x) - $0.radius < 201 && abs($0.center.y) <= limit - 2 }
     let offSide = visible.filter { abs($0.center.x) + reach($0) > 201 && abs($0.center.x) - $0.radius < 201 }
     print("\(scene): \(visible.count) visible, radii \(Set(visible.map { Int($0.radius.rounded()) }).sorted()), partly off the side: \(offSide.map(\.id))")
     check(tooTall.isEmpty, "\(scene) bubbles \(tooTall.map(\.id)) run into the heading or footer")
@@ -78,43 +81,29 @@ for scene in [OrbitScene.you, .circle, .world] {
     }
 }
 
-// 1d. v2: which orbs melt together (gap under 0.7 x blend = 8.4 reference points)?
-for scene in [OrbitScene.planet, .rise, .gather] {
-    let player = Player(); player.play(scene, at: 0); _ = player.frame(3); player.engine.reduceMotion = true
-    let s = player.frame(9).filter { $0.radius >= 1 }
-    var melted: [String] = []
-    for i in s.indices { for j in s.indices where j > i {
-        let gap = hypot(s[i].center.x - s[j].center.x, s[i].center.y - s[j].center.y) - s[i].radius - s[j].radius
-        if gap < 8.4 { melted.append("\(s[i].id)-\(s[j].id)") }
-    }}
-    print("  \(scene) melted together: \(melted.joined(separator: " "))")
-}
-// In orbit, the inner and outer rings should melt into each other when they pass, and nothing
-// should melt into you in the middle.
+// 1d. v2: in the revealed cluster, neighbours should keep melting together and letting go as they bob.
 do {
-    let player = Player(); player.play(.orbit, at: 0)
-    var passes = Set<String>(), touchesYou = false
+    let player = Player(); player.play(.gate, at: 0); _ = player.frame(2)
+    player.play(.reveal, at: 2)
+    var pairs = [String: Int]()
     for step in 0..<1200 {
-        let s = player.frame(3 + Double(step) / 20)
-        for i in 2...7 { for j in [0, 5, 6, 7] where j != i && (i <= 4) {
+        let s = player.frame(6 + Double(step) / 20)
+        let cluster = Array(1...15)
+        for i in cluster { for j in cluster where j > i {
             let gap = hypot(s[i].center.x - s[j].center.x, s[i].center.y - s[j].center.y) - s[i].radius - s[j].radius
-            if gap < 8.4 { passes.insert("\(i)-\(j)") }
+            if gap < 8.4 { pairs["\(i)-\(j)", default: 0] += 1 }
         }}
-        for i in [0, 2, 3, 4, 5, 6, 7] {
-            let gap = hypot(s[i].center.x - s[1].center.x, s[i].center.y - s[1].center.y) - s[i].radius - s[1].radius
-            if gap < 8.4 { touchesYou = true }
-        }
     }
-    print("  orbit: inner and outer orbs that melt together while passing, over a minute: \(passes.sorted().joined(separator: " "))")
-    check(passes.count >= 6, "orbit: the rings hardly ever meet")
-    check(!touchesYou, "orbit: an orbiting bubble melts into you")
+    let sometimes = pairs.filter { $0.value > 20 && $0.value < 1180 }.keys.sorted()
+    print("  reveal: pairs that melt together and let go again, over a minute: \(sometimes.joined(separator: " "))")
+    check(sometimes.count >= 3, "reveal: the cluster hardly ever melts together")
 }
 
 // 2. Every ordered pair of scenes, interrupted mid-flight: no NaN, nothing teleports.
 // The two versions never mix in the app (each has its own onboarding screen), so each version's
 // scenes are interrupted only by its own.
-let families: [[OrbitScene]] = [[.you, .bump, .circle, .world, .collapse], [.planet, .rise, .gather, .orbit]]
-var maxJump: CGFloat = 0
+let families: [[OrbitScene]] = [[.you, .bump, .circle, .world, .collapse], [.gate, .reveal]]
+var maxJump: CGFloat = 0, maxJumpV2: CGFloat = 0
 for family in families { for a in family { for b in family { for c in family where c != b {
     let player = Player()
     var t = 0.0
@@ -129,14 +118,17 @@ for family in families { for a in family { for b in family { for c in family whe
         for (i, bub) in frame.enumerated() {
             check(bub.center.x.isFinite && bub.center.y.isFinite && bub.radius.isFinite, "NaN \(a)->\(b)->\(c) id \(i)")
             if bub.radius > 1 && last[i].radius > 1 {
-                maxJump = max(maxJump, hypot(bub.center.x - last[i].center.x, bub.center.y - last[i].center.y))
+                let move = hypot(bub.center.x - last[i].center.x, bub.center.y - last[i].center.y)
+                if family.contains(.gate) { maxJumpV2 = max(maxJumpV2, move) } else { maxJump = max(maxJump, move) }
             }
         }
         last = frame
     }
 }}}}
-print("largest per-frame move of a visible bubble at 120 Hz: \(String(format: "%.1f", Double(maxJump))) pt")
+print("largest per-frame move of a visible bubble at 120 Hz: \(String(format: "%.1f", Double(maxJump))) pt (v1), \(String(format: "%.1f", Double(maxJumpV2))) pt (v2)")
 check(maxJump < 12, "something moves too fast to read as smooth")
+// v2's Earth is flung from the dome to its orb on purpose, like the Wabi app's: fast, but never a jump.
+check(maxJumpV2 < 24, "v2: something jumps")
 
 // 3. Budding on page 3: when does your first friend's neck let go of you, versus when its thread is strong
 //    enough to show (about 0.8)? The thread should be there by the time the neck would break.

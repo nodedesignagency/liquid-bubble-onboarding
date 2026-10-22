@@ -37,6 +37,10 @@ struct BubbleStage: View {
     var scene: OrbitScene
     var slot: CGRect? = nil
     var look: StageLook = .v1
+    /// v2: the finger lifting Earth, added to its position every frame.
+    var lift: EarthLift? = nil
+    /// v2: drawn into the glass layer over the photos, so glass passing over it bends it.
+    var backdrop: AnyView? = nil
 
     @State private var engine = BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
     @State private var sequence: Task<Void, Never>? = nil
@@ -54,10 +58,14 @@ struct BubbleStage: View {
             )
             TimelineView(.animation) { timeline in
                 let time = timeline.date.timeIntervalSinceReferenceDate
-                let bubbles = engine.snapshot(at: time)
+                let bubbles = lifted(engine.snapshot(at: time), at: time, scale: metrics.scale)
+                // v2 stretches each orb along its motion, so it needs where everyone was a moment ago.
+                let earlier = look == .v2 ? lifted(engine.snapshot(at: time - Self.velocityStep), at: time - Self.velocityStep,
+                                                   scale: metrics.scale) : []
                 ZStack {
                     if look == .v2 {
-                        GlassLiquidLayer(bubbles: bubbles, metrics: metrics, size: proxy.size)
+                        GlassLiquidLayer(bubbles: bubbles, velocities: velocities(bubbles, earlier, scale: metrics.scale),
+                                         metrics: metrics, size: proxy.size, backdrop: backdrop)
                     } else {
                         GooLayer(bubbles: bubbles, threads: engine.threads(at: time), metrics: metrics)
                     }
@@ -102,6 +110,27 @@ struct BubbleStage: View {
             sequence?.cancel()
             popHaptics?.cancel()
         }
+    }
+
+    static let velocityStep = 1.0 / 120
+
+    /// Each bubble's velocity in screen points per second, by id.
+    private func velocities(_ now: [RenderedBubble], _ before: [RenderedBubble], scale: CGFloat) -> [CGVector] {
+        now.indices.map { i in
+            guard before.indices.contains(i) else { return .zero }
+            return CGVector(dx: (now[i].center.x - before[i].center.x) * scale / Self.velocityStep,
+                            dy: (now[i].center.y - before[i].center.y) * scale / Self.velocityStep)
+        }
+    }
+
+    /// Earth moved by the finger, if there is one.
+    private func lifted(_ bubbles: [RenderedBubble], at time: Double, scale: CGFloat) -> [RenderedBubble] {
+        guard let lift, bubbles.indices.contains(OrbitChoreography.earth) else { return bubbles }
+        let offset = lift.offset(at: time)
+        guard offset != 0 else { return bubbles }
+        var out = bubbles
+        out[OrbitChoreography.earth].center.y += offset / scale
+        return out
     }
 
     /// Runs the scene's keyframes one after another.
@@ -238,7 +267,7 @@ private struct StageCaption: View {
 
 #Preview {
     struct Demo: View {
-        private let scenes: [OrbitScene] = [.planet, .rise, .gather, .orbit]
+        private let scenes: [OrbitScene] = [.gate, .reveal]
         @State private var index = 0
 
         var body: some View {

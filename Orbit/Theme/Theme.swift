@@ -13,6 +13,11 @@ enum Theme {
     /// Other crews get their own wash.
     static let butter = Color(hex: 0xF4E9CA)
     static let sky = Color(hex: 0xDCE6F3)
+
+    /// v2's canvas: a soft light grey like the Wabi app's, so clear glass has something to show
+    /// against. Also passed to the glass shader as what clear glass looks through to.
+    static let glassCanvas = Color(hex: 0xEDEDEF)
+    static let glassCanvasRGB = (r: Float(0xED) / 255, g: Float(0xED) / 255, b: Float(0xEF) / 255)
 }
 
 extension Color {

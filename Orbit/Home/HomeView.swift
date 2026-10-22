@@ -7,26 +7,49 @@ struct HomeView: View {
     var onReplay: (OnboardingVersion) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text("You're in orbit")
-                .font(.system(size: 28, weight: .semibold, design: .rounded))
-                .foregroundStyle(Theme.ink)
-                .frame(height: 52)
-
-            BubbleStage(scene: version.homeScene, look: version.look)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            HStack(spacing: 28) {
-                ForEach(OnboardingVersion.allCases, id: \.self) { option in
-                    Button("Replay \(option.rawValue)") { onReplay(option) }
-                        .font(.system(size: 16, weight: option == version ? .semibold : .medium, design: .rounded))
-                        .foregroundStyle(option == version ? Theme.ink : Theme.inkSecondary)
-                }
+        switch version {
+        case .v1:
+            VStack(spacing: 0) {
+                title
+                    .frame(height: 52)
+                BubbleStage(scene: version.homeScene, look: version.look)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                replay
             }
-            .frame(height: 44)
-            .padding(.bottom, 12)
+            .background(Theme.background)
+        case .v2:
+            // The revealed cluster over Earth, full screen, as the onboarding left it.
+            ZStack {
+                Theme.glassCanvas.ignoresSafeArea()
+                BubbleStage(scene: version.homeScene, look: version.look)
+                    .ignoresSafeArea()
+                VStack(spacing: 0) {
+                    Spacer()
+                    title
+                    Spacer()
+                    replay
+                }
+                .padding(.top, 220)
+            }
         }
-        .background(Theme.background)
+    }
+
+    private var title: some View {
+        Text("You're in orbit")
+            .font(.system(size: 28, weight: .semibold, design: .rounded))
+            .foregroundStyle(Theme.ink)
+    }
+
+    private var replay: some View {
+        HStack(spacing: 28) {
+            ForEach(OnboardingVersion.allCases, id: \.self) { option in
+                Button("Replay \(option.rawValue)") { onReplay(option) }
+                    .font(.system(size: 16, weight: option == version ? .semibold : .medium, design: .rounded))
+                    .foregroundStyle(option == version ? Theme.ink : Theme.inkSecondary)
+            }
+        }
+        .frame(height: 44)
+        .padding(.bottom, 12)
     }
 }
 
