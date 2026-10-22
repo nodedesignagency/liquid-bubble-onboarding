@@ -9,16 +9,18 @@ struct SpringCurve {
     var response: Double
     var dampingRatio: Double
 
-    /// Shoots a new bubble out of its parent with a little overshoot.
-    static let pop = SpringCurve(response: 0.62, dampingRatio: 0.56)
-    /// Inflates a new bubble; bouncier than `pop` so it visibly "plops" into shape.
-    static let inflate = SpringCurve(response: 0.5, dampingRatio: 0.5)
+    // Everything is close to critically damped: the liquid should flow, not bounce.
+
+    /// Carries a new bubble out of its parent slowly enough for the neck to stretch before it snaps.
+    static let bud = SpringCurve(response: 0.95, dampingRatio: 0.82)
+    /// Inflates a new bubble, with the faintest settle at the end.
+    static let inflate = SpringCurve(response: 0.8, dampingRatio: 0.78)
     /// Rearranges bubbles that are already on screen.
-    static let glide = SpringCurve(response: 0.75, dampingRatio: 0.74)
+    static let glide = SpringCurve(response: 0.9, dampingRatio: 0.88)
     /// Pulls a bubble back into its parent.
-    static let absorb = SpringCurve(response: 0.42, dampingRatio: 0.9)
-    /// Deflates a bubble that is being absorbed. Slower than `absorb` so it melts in instead of vanishing.
-    static let deflate = SpringCurve(response: 0.6, dampingRatio: 1)
+    static let absorb = SpringCurve(response: 0.75, dampingRatio: 1)
+    /// Deflates a bubble that is being absorbed. Slower than `absorb`, so it melts in instead of vanishing.
+    static let deflate = SpringCurve(response: 0.85, dampingRatio: 1)
     /// Used for everything when Reduce Motion is on: quick, no overshoot.
     static let calm = SpringCurve(response: 0.4, dampingRatio: 1)
 

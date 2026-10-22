@@ -19,10 +19,11 @@ struct GooTint: Equatable {
         self.blue = blue
     }
 
-    static let liquid = GooTint(hex: 0xD5C4FF)
-    static let lilac = GooTint(hex: 0xD0BDFF)
-    static let periwinkle = GooTint(hex: 0xBFD0FF)
-    static let blush = GooTint(hex: 0xF4C6EA)
+    static let liquid = GooTint(hex: 0xE2D5F2)
+    /// Crew tints, as soft as the reference's: lavender, sky and lilac.
+    static let lavender = GooTint(hex: 0xDCCDF3)
+    static let sky = GooTint(hex: 0xD3E2F6)
+    static let lilac = GooTint(hex: 0xF0D7EE)
 
     var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: 1) }
 
@@ -40,7 +41,7 @@ struct BubbleTarget {
     /// Zero hides the bubble.
     var radius: CGFloat = 0
     var tint: GooTint = .liquid
-    /// A hidden bubble sits inside this bubble, so it pops out of it and melts back into it.
+    /// A hidden bubble sits inside this bubble, so it buds out of it and melts back into it.
     var anchor: Int?
     /// Wait before the bubble starts, when it is appearing.
     var appearDelay: Double = 0
@@ -48,11 +49,13 @@ struct BubbleTarget {
     var moveDelay: Double = 0
 }
 
-struct StageLabel: Identifiable {
+/// A small caption under a group of bubbles, like "New York trip / Sep 3-5" in the reference.
+struct StageLabel: Identifiable, Equatable {
     var id: String { title }
     let title: String
     let detail: String
-    let position: CGPoint
+    /// The bubbles it sits under, centered on the group.
+    let anchors: [Int]
 }
 
 struct BubbleLayout {
@@ -61,6 +64,8 @@ struct BubbleLayout {
     /// Radians per second the whole layout slowly rotates at.
     var spin: Double = 0
     var labels: [StageLabel] = []
+    /// Labels wait for the bubbles to settle before fading in.
+    var labelDelay: Double = 1.0
 }
 
 struct RenderedBubble: Identifiable {
@@ -70,12 +75,18 @@ struct RenderedBubble: Identifiable {
     var tint: GooTint
 }
 
+struct RenderedLabel: Identifiable {
+    let label: StageLabel
+    var opacity: Double
+    var id: String { label.id }
+}
+
 // MARK: - Engine
 
-/// Drives every bubble as a function of time.
+/// Drives every bubble and label as a function of time.
 ///
-/// Each call to `transition(to:at:)` starts a spring from wherever the bubble is right
-/// now toward its new target, so taps that interrupt a running animation never jump.
+/// Each call to `transition(to:at:)` starts a spring from wherever things are right now
+/// toward their new target, so taps that interrupt a running animation never jump.
 /// Hidden bubbles follow their anchor bubble every frame, which is what makes new
 /// bubbles bud out of a moving parent instead of out of empty space.
 final class BubbleEngine {
@@ -96,11 +107,18 @@ final class BubbleEngine {
         var grow: SpringCurve
     }
 
+    private struct LabelTrack {
+        let label: StageLabel
+        let shownAt: Double
+        var hiddenAt: Double?
+    }
+
     var reduceMotion = false
 
     private var tracks: [Track]
     private var spinRate: Double = 0
     private var spinStart: Double = 0
+    private var labelTracks: [LabelTrack] = []
 
     init(bubbleCount: Int) {
         let hidden = Pose(center: .zero, radius: 0, tint: .liquid)
@@ -137,12 +155,12 @@ final class BubbleEngine {
 
             if isHidden && willShow {
                 let start = now + target.appearDelay * delayScale
-                // Swell inside the parent first, then shoot out, so the goo stretches into a neck before it snaps.
+                // Swell inside the parent first, then drift out, so the liquid stretches into a long neck before it lets go.
                 track.growStart = start
-                track.moveStart = start + 0.06
-                track.move = .pop
+                track.moveStart = start + 0.12
+                track.move = .bud
                 track.grow = .inflate
-                pops.append(target.appearDelay * delayScale + 0.3)
+                pops.append(target.appearDelay * delayScale + 0.55)
             } else if !isHidden && !willShow {
                 track.move = .absorb
                 track.grow = .deflate
@@ -155,23 +173,40 @@ final class BubbleEngine {
             tracks[id] = track
         }
 
+        // Spin is baked into the poses captured above, so restarting it here never jumps.
         spinRate = reduceMotion ? 0 : layout.spin
         spinStart = now
+
+        for i in labelTracks.indices where labelTracks[i].hiddenAt == nil {
+            labelTracks[i].hiddenAt = now
+        }
+        labelTracks.removeAll { ($0.hiddenAt ?? .infinity) < now - 1 }
+        labelTracks += layout.labels.map { LabelTrack(label: $0, shownAt: now + layout.labelDelay * delayScale) }
         return pops
     }
 
-    /// The frame to draw at `time`, including a gentle idle wobble so the goo always feels alive.
+    /// The frame to draw at `time`, plus a slow idle drift so the liquid feels alive.
     func snapshot(at time: Double) -> [RenderedBubble] {
         basePoses(at: time).enumerated().map { id, pose in
             var center = pose.center
             var radius = pose.radius
             if !reduceMotion {
                 let phase = Double(id) * 1.7
-                center.x += CGFloat(2.4 * sin(time * 0.9 + phase))
-                center.y += CGFloat(2.4 * cos(time * 0.75 + phase * 1.3))
-                radius *= CGFloat(1 + 0.018 * sin(time * 1.4 + phase))
+                center.x += CGFloat(1.4 * sin(time * 0.55 + phase))
+                center.y += CGFloat(1.4 * cos(time * 0.45 + phase * 1.3))
+                radius *= CGFloat(1 + 0.01 * sin(time * 0.8 + phase))
             }
             return RenderedBubble(id: id, center: center, radius: radius, tint: pose.tint)
+        }
+    }
+
+    /// Labels that are visible at `time`, fading in after their layout settles and out when it changes.
+    func labels(at time: Double) -> [RenderedLabel] {
+        labelTracks.compactMap { track in
+            let fadeIn = smoothstep((time - track.shownAt) / 0.4)
+            let fadeOut = track.hiddenAt.map { 1 - smoothstep((time - $0) / 0.2) } ?? 1
+            let opacity = fadeIn * fadeOut
+            return opacity > 0.001 ? RenderedLabel(label: track.label, opacity: opacity) : nil
         }
     }
 
@@ -219,6 +254,11 @@ final class BubbleEngine {
         let ramp = 1.5
         return spinRate * (elapsed - ramp * (1 - exp(-elapsed / ramp)))
     }
+}
+
+private func smoothstep(_ x: Double) -> Double {
+    let t = min(max(x, 0), 1)
+    return t * t * (3 - 2 * t)
 }
 
 extension CGPoint {

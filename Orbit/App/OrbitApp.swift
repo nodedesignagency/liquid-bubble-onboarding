@@ -7,7 +7,7 @@ struct OrbitApp: App {
             RootView()
                 // SF Pro Rounded everywhere.
                 .fontDesign(.rounded)
-                .tint(Theme.accent)
+                .tint(Theme.ink)
                 // Designed light-only, like the reference.
                 .preferredColorScheme(.light)
         }

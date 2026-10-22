@@ -1,8 +1,8 @@
 # Orbit: liquid bubble onboarding
 
 A SwiftUI onboarding for **Orbit**, a friend-circle app in the spirit of Bump and Snapchat.
-Earth sits in the middle; friends bud out of it like liquid, then friends of friends pop out of
-each friend, the bubbles regroup into crews, and finally fuse into a slowly orbiting ring.
+Earth sits in the middle and friends bud out of it like liquid. Then Maya's friends bud out of her,
+everyone regroups into crews, and the crews melt into one drop that bursts into a slowly orbiting ring.
 
 ![Onboarding steps](docs/onboarding-steps.jpg)
 
@@ -25,27 +25,32 @@ launch, and "Replay onboarding" on the last screen starts it again.
 ## How the liquid works
 
 - **Goo** (`Bubbles/BubbleStage.swift`, `GooLayer`): every bubble draws a slightly larger circle
-  into a `Canvas` layer that is blurred and then cut back with `alphaThreshold`. Where two blurs
-  overlap they fuse, which is the liquid neck you see when a bubble pops free. The blob is filled
-  with a periwinkle → lavender → pink gradient, crews glow in their own tint, and the whole layer
-  is feathered so there is no hard outline.
+  into a `Canvas` layer that is blurred, then cut back with `alphaThreshold`. Where two blurs
+  overlap they fuse, which is the liquid neck you see when a bubble buds out. Each filter sits on
+  its own nested layer: with both on one context, SwiftUI applies them in an order that makes the
+  circles glow instead of fusing. The blob is filled with soft lavender, crews glow in their own
+  tint, and the edge is feathered.
 - **Motion** (`Bubbles/BubbleEngine.swift`): each bubble is a pure function of time driven by
-  closed-form springs, so interrupting a transition never jumps. A hidden bubble rides inside its
-  parent every frame, which is why new friends bud out of a moving parent rather than out of thin air.
+  closed-form, near-critically-damped springs, so transitions flow without bouncing and
+  interrupting one never jumps. A hidden bubble rides inside its parent every frame, which is why
+  new friends bud out of a moving parent rather than out of thin air.
 - **Choreography** (`Bubbles/OrbitChoreography.swift`): the layouts for each page, in a fixed
-  372 × 400 reference space that scales to the screen.
+  372 × 480 reference space that scales to the screen. A page can be several keyframes: the last
+  page melts the crews into one drop, then bursts it into the ring.
+- The stage is laid out between the heading and the footer but draws over the whole screen, so
+  bubbles pushed aside slide off the real screen edge.
 
-Reduce Motion swaps the springs for quick, non-bouncy ones and turns off the idle wobble and the
-spin. Each pop plays a soft haptic.
+Reduce Motion swaps the springs for quick, non-bouncy ones and turns off the idle drift and the
+spin. Each bud plays a soft haptic as it lets go of its parent.
 
 ## Make it yours
 
-- **Copy**: `Onboarding/OnboardingStep.swift` (title, accent phrase, subtitle, scene per page).
+- **Copy**: `Onboarding/OnboardingStep.swift` (heading, sentence and scene per page).
 - **Colors**: `Theme/Theme.swift` and the `GooTint` palette in `Bubbles/BubbleEngine.swift`.
-- **Photos**: replace `friend-1` … `friend-18` in `Assets.xcassets`. A missing photo falls back to
+- **Photos**: replace `friend-1` … `friend-10` in `Assets.xcassets`. A missing photo falls back to
   initials.
 
 ## Credits
 
 - Earth: NASA Goddard Space Flight Center, "Blue Marble" (public domain).
-- Portraits: [Unsplash](https://unsplash.com/license), free to use under the Unsplash License.
+- Photos: [Unsplash](https://unsplash.com/license), free to use under the Unsplash License.

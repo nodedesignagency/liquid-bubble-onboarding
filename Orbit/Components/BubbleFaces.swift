@@ -14,7 +14,7 @@ struct AvatarFace: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                Theme.accent
+                Theme.inkSecondary
                 Text(person.initials)
                     .font(.system(size: diameter * 0.36, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)

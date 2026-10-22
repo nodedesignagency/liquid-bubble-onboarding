@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Heading at the top, the liquid bubble stage in the middle, the call to action at the bottom.
+/// Heading at the top, the liquid bubbles in the middle, one sentence and the arrow at the bottom.
+/// Everything except the bubbles stays quiet, like the reference.
 struct OnboardingView: View {
     var onFinish: () -> Void
 
     @State private var index = 0
     @State private var isLeaving = false
-    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 40
+    @State private var stageSlot: CGRect?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let steps = OnboardingStep.all
@@ -14,18 +15,26 @@ struct OnboardingView: View {
     private var isLast: Bool { index == steps.count - 1 }
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
-                .padding(.horizontal, 20)
-                .padding(.top, 6)
-            header
-                .padding(.horizontal, 24)
-                .padding(.top, 28)
-            BubbleStage(scene: isLeaving ? .collapse : step.scene)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            footer
-                .padding(.horizontal, 20)
-                .padding(.bottom, 4)
+        ZStack {
+            // Drawn full screen behind the text, but laid out in the slot between heading and footer,
+            // so bubbles pushed aside slide off the real edge of the screen.
+            BubbleStage(scene: isLeaving ? .collapse : step.scene, slot: stageSlot)
+                .ignoresSafeArea()
+            VStack(spacing: 0) {
+                topBar
+                    .padding(.horizontal, 12)
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onGeometryChange(for: CGRect.self) { proxy in
+                        proxy.frame(in: .global)
+                    } action: { slot in
+                        stageSlot = slot
+                    }
+                footer
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
+            }
+            .opacity(isLeaving ? 0 : 1)
         }
         .background(Theme.background)
         .contentShape(Rectangle())
@@ -36,66 +45,58 @@ struct OnboardingView: View {
     // MARK: Sections
 
     private var topBar: some View {
-        HStack(spacing: 14) {
-            Button(action: goBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: 34, height: 34)
-                    .glassBackground(in: Circle())
-            }
-            .opacity(index > 0 ? 1 : 0)
-            .disabled(index == 0)
-            .accessibilityLabel("Back")
-
-            StoryProgress(count: steps.count, index: index)
-
-            Button("Skip", action: skip)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .foregroundStyle(Theme.inkSecondary)
-                .opacity(isLast ? 0 : 1)
-                .disabled(isLast)
-        }
-        .frame(height: 34)
-        .opacity(isLeaving ? 0 : 1)
-    }
-
-    private var header: some View {
-        ZStack(alignment: .top) {
-            // Every page's copy, invisible, so the header is always as tall as the tallest page
-            // and the stage below it never jumps when the copy changes.
-            ForEach(steps) { headerText(for: $0).hidden() }
-            headerText(for: step)
+        ZStack {
+            Text(step.title)
+                .font(.system(size: 28, weight: .semibold, design: .rounded))
+                .foregroundStyle(Theme.ink)
                 .id(index)
                 .transition(.blurReplace)
+            HStack {
+                Button(action: goBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .frame(width: 44, height: 44)
+                }
+                .opacity(index > 0 ? 1 : 0)
+                .disabled(index == 0)
+                .accessibilityLabel("Back")
+                Spacer()
+                Button(action: skip) {
+                    Text("Skip")
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundStyle(Theme.inkSecondary)
+                        .frame(height: 44)
+                        .padding(.horizontal, 12)
+                }
+                .opacity(isLast ? 0 : 1)
+                .disabled(isLast)
+            }
         }
-        .opacity(isLeaving ? 0 : 1)
-    }
-
-    private func headerText(for step: OnboardingStep) -> some View {
-        VStack(spacing: 12) {
-            Text(step.styledTitle)
-                .font(.system(size: titleSize, weight: .heavy, design: .rounded))
-                .tracking(-0.6)
-                .foregroundStyle(Theme.ink)
-            Text(step.subtitle)
-                .font(.system(.body, design: .rounded, weight: .medium))
-                .foregroundStyle(Theme.inkSecondary)
-                .frame(maxWidth: 300)
-        }
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity)
+        .frame(height: 52)
     }
 
     private var footer: some View {
-        VStack(spacing: 6) {
-            PrimaryButton(title: isLast ? "Create my orbit" : "Continue", action: advance)
-            Button("I already have an account", action: finish)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .foregroundStyle(Theme.inkSecondary)
-                .frame(height: 44)
+        HStack(alignment: .bottom, spacing: 16) {
+            ZStack(alignment: .bottomLeading) {
+                // Every page's sentence, invisible, so the footer never changes height between pages.
+                ForEach(steps) { bodyText(for: $0).hidden() }
+                bodyText(for: step)
+                    .id(index)
+                    .transition(.blurReplace)
+            }
+            Spacer(minLength: 0)
+            NextButton(progress: Double(index + 1) / Double(steps.count), isLast: isLast, action: advance)
         }
-        .opacity(isLeaving ? 0 : 1)
+    }
+
+    private func bodyText(for step: OnboardingStep) -> some View {
+        Text(step.body)
+            .font(.system(size: 20, weight: .regular, design: .rounded))
+            .foregroundStyle(Theme.ink)
+            .lineSpacing(3)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: 270, alignment: .leading)
     }
 
     private var swipe: some Gesture {
@@ -137,7 +138,7 @@ struct OnboardingView: View {
         guard !isLeaving else { return }
         withAnimation(.smooth(duration: 0.4)) { isLeaving = true }
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(reduceMotion ? 0.4 : 1.2))
+            try? await Task.sleep(for: .seconds(reduceMotion ? 0.4 : 1.3))
             onFinish()
         }
     }

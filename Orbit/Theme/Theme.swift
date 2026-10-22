@@ -1,17 +1,15 @@
 import SwiftUI
 
-/// Light and airy, like the reference: near-white canvas, pastel liquid, ink type, one violet accent.
+/// Taken straight from the reference: a flat near-white canvas, quiet Apple-gray type,
+/// and soft lavender liquid. The bubbles are the only color on screen.
 enum Theme {
-    static let background = Color(hex: 0xF8F7FB)
-    static let ink = Color(hex: 0x15132B)
-    static let inkSecondary = Color(hex: 0x6F6C84)
-    static let inkTertiary = Color(hex: 0xA3A0B5)
-    /// Accent phrase in each headline.
-    static let accent = Color(hex: 0x6B5BFF)
-    static let track = Color(hex: 0x15132B, opacity: 0.1)
+    static let background = Color(hex: 0xFAFAFA)
+    static let ink = Color(hex: 0x1D1D1F)
+    static let inkSecondary = Color(hex: 0x86868B)
+    static let hairline = Color(hex: 0x1D1D1F, opacity: 0.1)
 
-    /// The liquid shifts from periwinkle through lavender to a pink lilac across the stage.
-    static let liquidGradient = [Color(hex: 0xC2CEFF), Color(hex: 0xD5C4FF), Color(hex: 0xEEC9EF)]
+    /// The liquid drifts from a bluish lavender to a pinkish one across the stage. Barely: it should read as one color.
+    static let liquidGradient = [Color(hex: 0xDCD6F5), Color(hex: 0xE2D5F2), Color(hex: 0xEAD6F0)]
 }
 
 extension Color {
