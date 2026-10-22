@@ -9,7 +9,7 @@ struct Person: Identifiable {
     init(id: Int, name: String) {
         self.id = id
         self.name = name
-        self.softPhoto = UIImage(named: "friend-\(id)").map { SoftPhoto.render($0, diameter: 150) }
+        self.softPhoto = UIImage(named: "friend-\(id)").map { SoftPhoto.render($0, diameter: 240) }
     }
 
     var initials: String {
@@ -18,10 +18,9 @@ struct Person: Identifiable {
 }
 
 extension Person {
-    /// Ids 1...10 match the friend bubbles in `OrbitChoreography`.
+    /// Ids 1...8 match the bubbles in `OrbitChoreography`: you, the friend you bump, then everyone else.
     static let samples: [Person] = [
-        "Maya", "Kwame", "Ines", "Kai", "Amara",
-        "Theo", "Priya", "Omar", "Sofia", "Lucas",
+        "Maya", "Kwame", "Ines", "Kai", "Amara", "Theo", "Priya", "Omar",
     ].enumerated().map { index, name in
         Person(id: index + 1, name: name)
     }

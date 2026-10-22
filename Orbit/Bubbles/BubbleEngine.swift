@@ -19,7 +19,7 @@ struct GooTint: Equatable {
         self.blue = blue
     }
 
-    static let liquid = GooTint(hex: 0xDFD1F0)
+    static let liquid = GooTint(hex: 0xDCD3F7)
     /// Crew tints, as soft as the reference's: lavender, sky and lilac.
     static let lavender = GooTint(hex: 0xD8C9F0)
     static let sky = GooTint(hex: 0xCFE0F5)
@@ -47,6 +47,18 @@ struct BubbleTarget {
     var appearDelay: Double = 0
     /// Wait before the bubble starts, when it is moving or disappearing.
     var moveDelay: Double = 0
+    /// Arrive with a soft wobble, for bubbles that collide.
+    var jelly = false
+}
+
+/// A thin string of liquid joining two bubbles. Time it to form just as a budding bubble would
+/// snap free of its parent, and the neck stretches into the thread instead of breaking.
+struct LiquidThread {
+    let a: Int
+    let b: Int
+    var delay: Double = 0
+
+    fileprivate var key: Int { min(a, b) * 1000 + max(a, b) }
 }
 
 /// A small caption under a group of bubbles, like "New York trip / Sep 3-5" in the reference.
@@ -66,6 +78,7 @@ struct BubbleLayout {
     var labels: [StageLabel] = []
     /// Labels wait for the bubbles to settle before fading in.
     var labelDelay: Double = 1.0
+    var threads: [LiquidThread] = []
 }
 
 struct RenderedBubble: Identifiable {
@@ -73,6 +86,13 @@ struct RenderedBubble: Identifiable {
     var center: CGPoint
     var radius: CGFloat
     var tint: GooTint
+}
+
+struct RenderedThread {
+    let a: Int
+    let b: Int
+    /// 0 is gone, 1 is fully formed.
+    var strength: CGFloat
 }
 
 struct RenderedLabel: Identifiable {
@@ -83,7 +103,7 @@ struct RenderedLabel: Identifiable {
 
 // MARK: - Engine
 
-/// Drives every bubble and label as a function of time.
+/// Drives every bubble, thread and label as a function of time.
 ///
 /// Each call to `transition(to:at:)` starts a spring from wherever things are right now
 /// toward their new target, so taps that interrupt a running animation never jump.
@@ -107,6 +127,15 @@ final class BubbleEngine {
         var grow: SpringCurve
     }
 
+    private struct ThreadTrack {
+        let a: Int
+        let b: Int
+        var from: Double
+        var to: Double
+        var start: Double
+        var curve: SpringCurve
+    }
+
     private struct LabelTrack {
         let label: StageLabel
         let shownAt: Double
@@ -119,6 +148,7 @@ final class BubbleEngine {
     private var spinRate: Double = 0
     private var spinStart: Double = 0
     private var labelTracks: [LabelTrack] = []
+    private var threadTracks: [Int: ThreadTrack] = [:]
 
     init(bubbleCount: Int) {
         let hidden = Pose(center: .zero, radius: 0, tint: .liquid)
@@ -164,6 +194,8 @@ final class BubbleEngine {
             } else if !isHidden && !willShow {
                 track.move = .absorb
                 track.grow = .deflate
+            } else if target.jelly {
+                track.move = .jelly
             }
 
             if reduceMotion {
@@ -176,6 +208,18 @@ final class BubbleEngine {
         // Spin is baked into the poses captured above, so restarting it here never jumps.
         spinRate = reduceMotion ? 0 : layout.spin
         spinStart = now
+
+        // Threads that stay keep going from where they are; dropped ones thin out and vanish.
+        let wanted = Dictionary(layout.threads.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        for (key, track) in threadTracks where wanted[key] == nil {
+            threadTracks[key] = ThreadTrack(a: track.a, b: track.b, from: strength(of: track, at: now), to: 0,
+                                            start: now, curve: reduceMotion ? .calm : .absorb)
+        }
+        for (key, thread) in wanted {
+            let current = threadTracks[key].map { strength(of: $0, at: now) } ?? 0
+            threadTracks[key] = ThreadTrack(a: thread.a, b: thread.b, from: current, to: 1,
+                                            start: now + thread.delay * delayScale, curve: reduceMotion ? .calm : .glide)
+        }
 
         for i in labelTracks.indices where labelTracks[i].hiddenAt == nil {
             labelTracks[i].hiddenAt = now
@@ -198,6 +242,18 @@ final class BubbleEngine {
             }
             return RenderedBubble(id: id, center: center, radius: radius, tint: pose.tint)
         }
+    }
+
+    /// Threads that are visible at `time`.
+    func threads(at time: Double) -> [RenderedThread] {
+        threadTracks.values.compactMap { track in
+            let s = strength(of: track, at: time)
+            return s > 0.02 ? RenderedThread(a: track.a, b: track.b, strength: CGFloat(min(s, 1.2))) : nil
+        }
+    }
+
+    private func strength(of track: ThreadTrack, at time: Double) -> Double {
+        track.from + (track.to - track.from) * track.curve.progress(at: time - track.start)
     }
 
     /// Labels that are visible at `time`, fading in after their layout settles and out when it changes.

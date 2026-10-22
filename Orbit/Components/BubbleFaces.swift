@@ -37,11 +37,13 @@ struct EarthFace: View {
     }
 }
 
-/// The reference's photo treatment: no border and no shadow. The middle of the photo stays sharp,
-/// the outer rim goes soft and blurry, and the very edge fades out so the photo melts into the
-/// liquid around it. Rendered once per photo, so the animation only ever moves a flat image.
+/// No border and no shadow: the middle of the photo stays sharp, the outer rim goes soft and
+/// blurry and takes on the liquid's color, and the very edge fades out so the photo melts into
+/// the liquid around it. Rendered once per photo, so the animation only ever moves a flat image.
 enum SoftPhoto {
     private static let ciContext = CIContext()
+    /// `Theme.liquid`.
+    private static let liquid = UIColor(red: 0xDC / 255, green: 0xD3 / 255, blue: 0xF7 / 255, alpha: 1)
 
     /// `diameter` is in points; the image is rendered at 3x.
     static func render(_ source: UIImage, diameter: CGFloat) -> UIImage {
@@ -53,14 +55,22 @@ enum SoftPhoto {
 
         let square = UIGraphicsImageRenderer(size: size, format: format).image { _ in
             source.draw(in: aspectFill(source.size, in: rect))
+            // Fill the corners outside the circle with liquid, so the blur can't drag dark corners into the rim.
+            let corners = UIBezierPath(rect: rect)
+            corners.append(UIBezierPath(ovalIn: rect))
+            corners.usesEvenOddFillRule = true
+            liquid.setFill()
+            corners.fill()
         }
         let blurred = blur(square, sigma: diameter * 0.05 * format.scale)
 
         return UIGraphicsImageRenderer(size: size, format: format).image { context in
             let cg = context.cgContext
-            // Blurry rim, fading out at the edge...
+            // Blurry rim washed with the liquid's color, fading out at the edge...
             cg.beginTransparencyLayer(auxiliaryInfo: nil)
             blurred.draw(in: rect)
+            cg.setFillColor(liquid.withAlphaComponent(0.35).cgColor)
+            cg.fill(rect)
             fade(cg, in: rect, from: 0.72, to: 1)
             cg.endTransparencyLayer()
             // ...under a sharp middle that dissolves into it.

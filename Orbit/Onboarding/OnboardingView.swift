@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Heading at the top, the liquid bubbles in the middle, one sentence and the arrow at the bottom.
-/// Everything except the bubbles stays quiet, like the reference.
+/// Title and one line at the top, the liquid bubbles in the middle, the button at the bottom.
+/// Everything except the bubbles stays quiet.
 struct OnboardingView: View {
     var onFinish: () -> Void
 
@@ -16,13 +16,15 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            // Drawn full screen behind the text, but laid out in the slot between heading and footer,
-            // so bubbles pushed aside slide off the real edge of the screen.
+            // Drawn full screen behind the text, but laid out in the slot between header and footer,
+            // so bubbles that wander off slide past the real edge of the screen.
             BubbleStage(scene: isLeaving ? .collapse : step.scene, slot: stageSlot)
                 .ignoresSafeArea()
             VStack(spacing: 0) {
                 topBar
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 8)
+                header
+                    .padding(.horizontal, 32)
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onGeometryChange(for: CGRect.self) { proxy in
@@ -32,7 +34,7 @@ struct OnboardingView: View {
                     }
                 footer
                     .padding(.horizontal, 24)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, 8)
             }
             .opacity(isLeaving ? 0 : 1)
         }
@@ -45,58 +47,57 @@ struct OnboardingView: View {
     // MARK: Sections
 
     private var topBar: some View {
-        ZStack {
-            Text(step.title)
-                .font(.system(size: 28, weight: .semibold, design: .rounded))
-                .foregroundStyle(Theme.ink)
+        HStack {
+            Button(action: goBack) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 44, height: 44)
+            }
+            .opacity(index > 0 ? 1 : 0)
+            .disabled(index == 0)
+            .accessibilityLabel("Back")
+            Spacer()
+            Button(action: skip) {
+                Text("Skip")
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundStyle(Theme.inkSecondary)
+                    .frame(height: 44)
+                    .padding(.horizontal, 12)
+            }
+            .opacity(isLast ? 0 : 1)
+            .disabled(isLast)
+        }
+    }
+
+    private var header: some View {
+        ZStack(alignment: .top) {
+            // Every page's copy, invisible, so the header never changes height between pages.
+            ForEach(steps) { headerText(for: $0).hidden() }
+            headerText(for: step)
                 .id(index)
                 .transition(.blurReplace)
-            HStack {
-                Button(action: goBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Theme.ink)
-                        .frame(width: 44, height: 44)
-                }
-                .opacity(index > 0 ? 1 : 0)
-                .disabled(index == 0)
-                .accessibilityLabel("Back")
-                Spacer()
-                Button(action: skip) {
-                    Text("Skip")
-                        .font(.system(size: 16, weight: .medium, design: .rounded))
-                        .foregroundStyle(Theme.inkSecondary)
-                        .frame(height: 44)
-                        .padding(.horizontal, 12)
-                }
-                .opacity(isLast ? 0 : 1)
-                .disabled(isLast)
-            }
         }
-        .frame(height: 52)
+    }
+
+    private func headerText(for step: OnboardingStep) -> some View {
+        VStack(spacing: 8) {
+            Text(step.title)
+                .font(.system(size: 30, weight: .semibold, design: .rounded))
+                .foregroundStyle(Theme.ink)
+            Text(step.subtitle)
+                .font(.system(size: 17, weight: .regular, design: .rounded))
+                .foregroundStyle(Theme.inkSecondary)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
     }
 
     private var footer: some View {
-        HStack(alignment: .bottom, spacing: 16) {
-            ZStack(alignment: .bottomLeading) {
-                // Every page's sentence, invisible, so the footer never changes height between pages.
-                ForEach(steps) { bodyText(for: $0).hidden() }
-                bodyText(for: step)
-                    .id(index)
-                    .transition(.blurReplace)
-            }
-            Spacer(minLength: 0)
-            NextButton(progress: Double(index + 1) / Double(steps.count), isLast: isLast, action: advance)
+        VStack(spacing: 22) {
+            PageDots(count: steps.count, index: index)
+            PrimaryButton(title: isLast ? "Get started" : "Continue", action: advance)
         }
-    }
-
-    private func bodyText(for step: OnboardingStep) -> some View {
-        Text(step.body)
-            .font(.system(size: 20, weight: .regular, design: .rounded))
-            .foregroundStyle(Theme.ink)
-            .lineSpacing(3)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: 270, alignment: .leading)
     }
 
     private var swipe: some Gesture {

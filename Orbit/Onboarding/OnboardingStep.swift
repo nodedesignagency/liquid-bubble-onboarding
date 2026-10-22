@@ -1,8 +1,8 @@
-/// One onboarding page: a short heading, one calm sentence, and the bubble arrangement between them.
+/// One onboarding page: a short title, one line under it, and the scene the bubbles play.
 struct OnboardingStep: Identifiable {
     let id: Int
     let title: String
-    let body: String
+    let subtitle: String
     let scene: OrbitScene
 }
 
@@ -10,27 +10,27 @@ extension OnboardingStep {
     static let all: [OnboardingStep] = [
         OnboardingStep(
             id: 0,
-            title: "Your world",
-            body: "Everyone you love, one tap away. Wherever they are.",
-            scene: .world
+            title: "It starts with you",
+            subtitle: "Your orbit begins with a single bubble.",
+            scene: .you
         ),
         OnboardingStep(
             id: 1,
-            title: "Friends of friends",
-            body: "Meet the people your people already love, without the awkward intro.",
-            scene: .friendsOfFriends
+            title: "Bump to connect",
+            subtitle: "Tap phones with a friend to join bubbles.",
+            scene: .bump
         ),
         OnboardingStep(
             id: 2,
-            title: "Crews",
-            body: "Roomies, run club, the family chat. Every crew gets its own little bubble.",
-            scene: .crews
+            title: "Your circle grows",
+            subtitle: "Friends of friends, one bubble away.",
+            scene: .circle
         ),
         OnboardingStep(
             id: 3,
-            title: "Bump to connect",
-            body: "Hold two phones together and you're in each other's orbit. That's it.",
-            scene: .orbit
+            title: "Your world, in orbit",
+            subtitle: "Everyone you love, wherever they are.",
+            scene: .world
         ),
     ]
 }

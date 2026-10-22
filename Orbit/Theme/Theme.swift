@@ -1,15 +1,19 @@
 import SwiftUI
 
-/// Taken straight from the reference: a flat near-white canvas, quiet Apple-gray type,
-/// and soft lavender liquid. The bubbles are the only color on screen.
+/// A flat near-white canvas, quiet Apple-gray type, and bluish lavender liquid.
+/// The bubbles are the only color on screen.
 enum Theme {
     static let background = Color(hex: 0xFAFAFA)
     static let ink = Color(hex: 0x1D1D1F)
     static let inkSecondary = Color(hex: 0x86868B)
-    static let hairline = Color(hex: 0x1D1D1F, opacity: 0.1)
+    static let hairline = Color(hex: 0x1D1D1F, opacity: 0.14)
 
-    /// The liquid drifts from a bluish lavender to a pinkish one across the stage. Barely: it should read as one color.
-    static let liquidGradient = [Color(hex: 0xD9D3F3), Color(hex: 0xDFD1F0), Color(hex: 0xE8D3EE)]
+    /// The liquid, lit from above: lighter at the top of the screen, deeper toward the bottom.
+    static let liquidLight = Color(hex: 0xE8E2FB)
+    static let liquid = Color(hex: 0xDCD3F7)
+    static let liquidDeep = Color(hex: 0xD0C4F2)
+    /// The shaded lower right of each blob.
+    static let liquidShade = Color(hex: 0xB9A9EC)
 }
 
 extension Color {

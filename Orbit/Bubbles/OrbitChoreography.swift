@@ -1,16 +1,16 @@
 import Foundation
 import CoreGraphics
 
-/// The arrangements the bubble stage can morph between.
+/// The story the bubbles tell, one scene per onboarding page.
 enum OrbitScene: Hashable {
-    /// Earth in the middle, five friends bud out of it.
+    /// One bubble, you, alive in the middle.
+    case you
+    /// A friend drifts in and collides with you; you fuse, then pull apart still joined by a thread.
+    case bump
+    /// Friends bud out of each of you, every one tethered by a thread of liquid.
+    case circle
+    /// Everything drains into one drop that swells into Earth, friends clinging to its rim.
     case world
-    /// Maya moves to the middle and her friends bud out of her.
-    case friendsOfFriends
-    /// Everyone regroups into three crews of three.
-    case crews
-    /// The crews melt into a single drop, which bursts into a liquid ring around Earth.
-    case orbit
     /// Everything melts back into Earth, which shrinks to nothing.
     case collapse
 }
@@ -21,141 +21,107 @@ struct Keyframe {
     let layout: BubbleLayout
 }
 
-/// Bubble positions for every `OrbitScene`, at the reference's scale: few, big bubbles,
-/// happy to run off the edge of the screen.
+/// Bubble positions for every `OrbitScene`.
 ///
-/// Bubble 0 is Earth, 1...5 are your friends (1 is Maya), 6...9 are Maya's friends and 10 only
-/// shows up in the ring. Coordinates are in the stage's 372 x 480 reference space, centered on
-/// the middle of the stage.
+/// Bubble 0 is Earth, 1 is you, 2 is the friend you bump, 3...5 are your friends and 6...8 are
+/// theirs. Coordinates are in the stage's 372 x 480 reference space, centered on the middle of
+/// the stage.
 enum OrbitChoreography {
-    static let bubbleCount = 11
+    static let bubbleCount = 9
     static let earth = 0
-    static let maya = 1
+    static let you = 1
+    static let friend = 2
 
     static func keyframes(for scene: OrbitScene) -> [Keyframe] {
         switch scene {
-        case .world: [Keyframe(after: 0, layout: world)]
-        case .friendsOfFriends: [Keyframe(after: 0, layout: friendsOfFriends)]
-        case .crews: [Keyframe(after: 0, layout: crews)]
-        case .orbit: [Keyframe(after: 0, layout: drop), Keyframe(after: 1.05, layout: orbit)]
+        case .you: [Keyframe(after: 0, layout: alone)]
+        case .bump: [Keyframe(after: 0, layout: collide), Keyframe(after: 1.5, layout: tethered)]
+        case .circle: [Keyframe(after: 0, layout: circle)]
+        case .world: [Keyframe(after: 0, layout: drop), Keyframe(after: 1.1, layout: world)]
         case .collapse: [Keyframe(after: 0, layout: collapse)]
         }
     }
 
     // MARK: Scenes
 
-    private static var world: BubbleLayout {
-        let earthCenter = CGPoint(x: 0, y: -10)
-        // (angle in degrees, 0 is right and clockwise; distance from Earth; radius) for friends 1...5.
-        let friends: [(Double, CGFloat, CGFloat)] = [
-            (-58, 176, 44),   // Maya
-            (12, 170, 40),    // Kwame
-            (82, 172, 44),    // Ines
-            (152, 170, 40),   // Kai
-            (-128, 174, 42),  // Amara
-        ]
-        // Bud order hops across the planet instead of ticking round it like a clock.
-        let budOrder = [0, 3, 1, 2, 4]
-
-        var targets = hiddenEverywhere()
-        targets[earth] = BubbleTarget(center: earthCenter, radius: 92, appearDelay: 0.05)
-        for (k, friend) in friends.enumerated() {
-            let offset = polar(friend.1, friend.0)
-            targets[1 + k] = BubbleTarget(
-                center: CGPoint(x: earthCenter.x + offset.x, y: earthCenter.y + offset.y),
-                radius: friend.2,
-                appearDelay: 0.7 + 0.22 * Double(budOrder[k]),
-                moveDelay: 0.04 * Double(k)
-            )
-        }
+    private static var alone: BubbleLayout {
+        var targets = tucked()
+        targets[you] = BubbleTarget(center: CGPoint(x: 0, y: 10), radius: 88, appearDelay: 0.1)
+        // Waiting just off the right edge for the next page.
+        targets[friend] = BubbleTarget(center: CGPoint(x: 340, y: 20), radius: 62)
         return BubbleLayout(targets: targets)
     }
 
-    private static var friendsOfFriends: BubbleLayout {
-        let mayaCenter = CGPoint(x: 0, y: -40)
-        // (angle around Maya, distance, radius) for Maya's friends 6...9.
-        let around: [(Double, CGFloat, CGFloat)] = [(-150, 140, 40), (-90, 136, 40), (-30, 140, 40), (30, 140, 42)]
+    /// The friend glides in and squashes into you.
+    private static var collide: BubbleLayout {
+        var targets = tucked()
+        targets[you] = BubbleTarget(center: CGPoint(x: -60, y: 10), radius: 74, jelly: true)
+        targets[friend] = BubbleTarget(center: CGPoint(x: 64, y: 10), radius: 60, jelly: true)
+        return BubbleLayout(targets: targets)
+    }
 
-        var targets = hiddenEverywhere()
-        targets[maya] = BubbleTarget(center: mayaCenter, radius: 54)
-        // Earth and Kwame drift down and half off screen; everyone else steps out of frame.
-        targets[earth] = BubbleTarget(center: CGPoint(x: -160, y: 120), radius: 92, appearDelay: 0.05)
-        targets[2] = BubbleTarget(center: CGPoint(x: 170, y: 175), radius: 40, moveDelay: 0.05)
-        targets[3] = BubbleTarget(center: CGPoint(x: 300, y: 60), radius: 44, moveDelay: 0.05)
-        targets[4] = BubbleTarget(center: CGPoint(x: -320, y: -40), radius: 40, moveDelay: 0.05)
-        targets[5] = BubbleTarget(center: CGPoint(x: -300, y: -200), radius: 42, moveDelay: 0.05)
-        for (i, friend) in around.enumerated() {
-            let offset = polar(friend.1, friend.0)
-            targets[6 + i] = BubbleTarget(
-                center: CGPoint(x: mayaCenter.x + offset.x, y: mayaCenter.y + offset.y),
-                radius: friend.2,
-                appearDelay: 0.75 + 0.2 * Double(i),
-                moveDelay: 0.05 * Double(i)
+    /// You drift apart, and the liquid between you stretches into a thread instead of breaking.
+    private static var tethered: BubbleLayout {
+        var targets = tucked()
+        targets[you] = BubbleTarget(center: CGPoint(x: -84, y: -30), radius: 66)
+        targets[friend] = BubbleTarget(center: CGPoint(x: 88, y: 56), radius: 54)
+        return BubbleLayout(targets: targets, threads: [LiquidThread(a: you, b: friend)])
+    }
+
+    private static var circle: BubbleLayout {
+        let youCenter = CGPoint(x: -30, y: -60)
+        let friendCenter = CGPoint(x: 60, y: 80)
+        // (parent, angle around the parent in degrees with 0 right and clockwise, distance, radius, bud delay)
+        let buds: [(Int, Double, CGFloat, CGFloat, Double)] = [
+            (you, -110, 128, 34, 0.5),
+            (you, -160, 118, 30, 0.7),
+            (you, -40, 124, 30, 0.9),
+            (friend, 30, 104, 26, 0.6),
+            (friend, 80, 112, 32, 0.8),
+            (friend, 140, 110, 28, 1.0),
+        ]
+
+        var targets = tucked()
+        targets[you] = BubbleTarget(center: youCenter, radius: 58)
+        targets[friend] = BubbleTarget(center: friendCenter, radius: 50)
+        var threads = [LiquidThread(a: you, b: friend)]
+        for (i, bud) in buds.enumerated() {
+            let parentCenter = bud.0 == you ? youCenter : friendCenter
+            let offset = polar(bud.2, bud.1)
+            targets[3 + i] = BubbleTarget(
+                center: CGPoint(x: parentCenter.x + offset.x, y: parentCenter.y + offset.y),
+                radius: bud.3,
+                appearDelay: bud.4
             )
+            // Forms as the bud would snap free, so its neck stretches into the thread.
+            threads.append(LiquidThread(a: bud.0, b: 3 + i, delay: bud.4 + 0.25))
         }
-        return BubbleLayout(
-            targets: targets,
-            labels: [StageLabel(title: "Maya", detail: "4 mutual friends", anchors: [maya])],
-            labelDelay: 1.9
-        )
+        return BubbleLayout(targets: targets, threads: threads)
     }
 
-    private static var crews: BubbleLayout {
-        // Three friends per crew, packed in a triangle, staggered down the screen like the reference.
-        let crews: [(name: String, center: CGPoint, pointsDown: Bool, tint: GooTint, members: [Int])] = [
-            ("Roomies", CGPoint(x: -84, y: -135), false, .lavender, [1, 6, 7]),
-            ("Run club", CGPoint(x: 96, y: 8), true, .sky, [2, 8, 9]),
-            ("Family", CGPoint(x: -70, y: 128), false, .lilac, [3, 4, 5]),
-        ]
-        let radius: CGFloat = 44
-        let spacing = 2 * radius + 2
-        let slots = [
-            CGPoint(x: 0, y: -spacing / 3.0.squareRoot()),
-            CGPoint(x: -spacing / 2, y: spacing / (2 * 3.0.squareRoot())),
-            CGPoint(x: spacing / 2, y: spacing / (2 * 3.0.squareRoot())),
-        ]
-
-        var targets = hiddenEverywhere()
-        targets[earth] = BubbleTarget(radius: 0, moveDelay: 0.1)
-        var labels: [StageLabel] = []
-        for (c, crew) in crews.enumerated() {
-            let flip: CGFloat = crew.pointsDown ? -1 : 1
-            for (slot, id) in crew.members.enumerated() {
-                targets[id] = BubbleTarget(
-                    center: CGPoint(x: crew.center.x + slots[slot].x * flip, y: crew.center.y + slots[slot].y * flip),
-                    radius: radius,
-                    tint: crew.tint,
-                    appearDelay: 0.3 + 0.08 * Double(slot),
-                    moveDelay: 0.1 * Double(c) + 0.05 * Double(slot)
-                )
-            }
-            labels.append(StageLabel(title: crew.name, detail: "\(crew.members.count) friends", anchors: crew.members))
-        }
-        return BubbleLayout(targets: targets, labels: labels)
-    }
-
-    /// Every crew slides into the middle and melts into one small drop.
+    /// Every bubble drains into the middle and melts into one small drop.
     private static var drop: BubbleLayout {
         var targets = (0..<bubbleCount).map { id in
             BubbleTarget(anchor: earth, moveDelay: 0.04 * Double(id % 4))
         }
-        targets[earth] = BubbleTarget(radius: 8, appearDelay: 0.35)
+        targets[earth] = BubbleTarget(radius: 12, appearDelay: 0.3)
         return BubbleLayout(targets: targets)
     }
 
-    /// The drop bursts into a ring that fuses into one liquid donut, and Earth swells back in the middle.
-    private static var orbit: BubbleLayout {
-        var targets = hiddenEverywhere()
-        targets[earth] = BubbleTarget(radius: 56, appearDelay: 0.35, moveDelay: 0.35)
-        for slot in 0..<10 {
-            targets[1 + slot] = BubbleTarget(
-                center: polar(134, -90 + 36 * Double(slot)),
-                radius: 42,
-                appearDelay: 0.02 * Double(slot),
-                moveDelay: 0.02 * Double(slot)
+    /// The drop swells into Earth and your people bud back out, clinging to its rim like droplets.
+    private static var world: BubbleLayout {
+        let rim: [(Double, CGFloat)] = [(-100, 30), (-55, 26), (-10, 28), (35, 24), (80, 30), (125, 26), (170, 28), (215, 24)]
+        var targets = tucked()
+        targets[earth] = BubbleTarget(radius: 92, appearDelay: 0, moveDelay: 0)
+        for (i, spot) in rim.enumerated() {
+            // Sitting a little over Earth's edge, so each one stays fused to it.
+            targets[1 + i] = BubbleTarget(
+                center: polar(92 + spot.1 * 0.62, spot.0),
+                radius: spot.1,
+                appearDelay: 0.25 + 0.07 * Double(i)
             )
         }
-        return BubbleLayout(targets: targets, spin: 0.08)
+        return BubbleLayout(targets: targets, spin: 0.06)
     }
 
     private static var collapse: BubbleLayout {
@@ -168,12 +134,13 @@ enum OrbitChoreography {
 
     // MARK: Helpers
 
-    /// Each bubble tucked inside the one it grows out of: Maya's friends inside Maya, everyone else inside Earth.
-    private static func hiddenEverywhere() -> [BubbleTarget] {
+    /// Each bubble tucked inside the one it grows out of: your friends inside you, your friend's inside them.
+    private static func tucked() -> [BubbleTarget] {
         (0..<bubbleCount).map { id in
             switch id {
             case earth: BubbleTarget()
-            case 6...9: BubbleTarget(anchor: maya)
+            case 3...5: BubbleTarget(anchor: you)
+            case 6...8: BubbleTarget(anchor: friend)
             default: BubbleTarget(anchor: earth)
             }
         }

@@ -17,6 +17,8 @@ struct SpringCurve {
     static let inflate = SpringCurve(response: 0.8, dampingRatio: 0.78)
     /// Rearranges bubbles that are already on screen.
     static let glide = SpringCurve(response: 0.9, dampingRatio: 0.88)
+    /// Two bubbles colliding: they squash together and settle with a soft wobble.
+    static let jelly = SpringCurve(response: 0.8, dampingRatio: 0.62)
     /// Pulls a bubble back into its parent.
     static let absorb = SpringCurve(response: 0.75, dampingRatio: 1)
     /// Deflates a bubble that is being absorbed. Slower than `absorb`, so it melts in instead of vanishing.
