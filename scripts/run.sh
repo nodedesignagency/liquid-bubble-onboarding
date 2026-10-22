@@ -37,14 +37,20 @@ xcrun simctl boot "$DEVICE_ID" 2>/dev/null || true
 open -a Simulator
 
 echo "▸ Building (the first build takes a minute)"
-xcodebuild \
+LOG="build/xcodebuild.log"
+mkdir -p build
+if ! xcodebuild \
   -project Orbit.xcodeproj \
   -scheme Orbit \
   -configuration Debug \
   -destination "id=$DEVICE_ID" \
   -derivedDataPath "$DERIVED_DATA" \
-  -quiet \
-  build
+  build >"$LOG" 2>&1; then
+  echo "✗ Build failed:"
+  grep -E "error:" "$LOG" | sort -u | head -40
+  echo "Full log: $LOG"
+  exit 1
+fi
 
 echo "▸ Installing and launching"
 xcrun simctl install "$DEVICE_ID" "$APP"

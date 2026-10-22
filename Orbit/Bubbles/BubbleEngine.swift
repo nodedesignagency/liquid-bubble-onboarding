@@ -20,10 +20,6 @@ struct GooTint: Equatable {
     }
 
     static let liquid = GooTint(hex: 0xDCD3F7)
-    /// Crew tints, as soft as the reference's: lavender, sky and lilac.
-    static let lavender = GooTint(hex: 0xD8C9F0)
-    static let sky = GooTint(hex: 0xCFE0F5)
-    static let lilac = GooTint(hex: 0xEED3EC)
 
     var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: 1) }
 

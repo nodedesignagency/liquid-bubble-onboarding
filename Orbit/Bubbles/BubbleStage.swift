@@ -303,7 +303,7 @@ private struct StageCaption: View {
 
 #Preview {
     struct Demo: View {
-        private let scenes: [OrbitScene] = [.world, .friendsOfFriends, .crews, .orbit]
+        private let scenes: [OrbitScene] = [.you, .bump, .circle, .world]
         @State private var index = 0
 
         var body: some View {

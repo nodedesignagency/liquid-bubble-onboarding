@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Placeholder for the real app. Onboarding ends by collapsing into Earth, and this
-/// screen picks up from there by bursting the orbit ring back out.
+/// screen picks up from there: Earth swells back and your friends bud out onto its rim.
 struct HomeView: View {
     var onReplayOnboarding: () -> Void
 
@@ -12,7 +12,7 @@ struct HomeView: View {
                 .foregroundStyle(Theme.ink)
                 .frame(height: 52)
 
-            BubbleStage(scene: .orbit)
+            BubbleStage(scene: .world)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             Button("Replay onboarding", action: onReplayOnboarding)
