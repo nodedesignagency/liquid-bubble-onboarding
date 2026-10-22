@@ -9,6 +9,7 @@ struct OnboardingView: View {
     @State private var isLeaving = false
     @State private var stageSlot: CGRect?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(PhotoStyle.storageKey) private var photoStyle = PhotoStyle.glass.rawValue
 
     private let steps = OnboardingStep.all
     private var step: OnboardingStep { steps[index] }
@@ -41,7 +42,14 @@ struct OnboardingView: View {
         .background(Theme.background)
         .contentShape(Rectangle())
         .gesture(swipe)
+        #if DEBUG
+        // For comparing looks while we iterate: triple-tap switches glass orbs and masked photos.
+        .onTapGesture(count: 3) {
+            photoStyle = photoStyle == PhotoStyle.glass.rawValue ? PhotoStyle.mask.rawValue : PhotoStyle.glass.rawValue
+        }
+        #endif
         .sensoryFeedback(.selection, trigger: index)
+        .sensoryFeedback(.impact(weight: .light), trigger: photoStyle)
     }
 
     // MARK: Sections

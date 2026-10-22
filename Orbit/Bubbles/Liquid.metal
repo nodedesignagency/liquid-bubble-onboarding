@@ -44,3 +44,62 @@ using namespace metal;
     tint /= field;
     return half4(half3(tint * alpha), half(alpha));
 }
+
+/// Turns a square photo into a glass orb (used through `.layerEffect` in `BubbleStage`).
+///
+/// The photo sits a little behind a glass sphere: each pixel looks through the sphere's front
+/// surface, refracts, and lands on the photo, so the middle is gently magnified and the picture
+/// bends round toward the rim. The rim splits colour a touch and reflects the pale surroundings,
+/// and the light is a soft window reflection along the top rim, a small glint at the top left
+/// and the bright crescent where light focuses through the ball at the bottom. No shadows.
+/// Outside the circle it is clear, with an antialiased edge.
+///
+/// `bounds` is the view's rect (`.boundingRect`); `depth` is how far behind the glass the photo
+/// sits (more is a stronger lens). Mirrored in `tools/preview/render.py` (`orb`).
+[[ stitchable ]] half4 glassOrb(float2 position, SwiftUI::Layer layer, float4 bounds, float depth) {
+    const float2 size = bounds.zw;
+    const float radius = 0.5 * min(size.x, size.y);
+    if (radius < 1.0) {
+        return half4(0.0h);
+    }
+    const float2 centre = bounds.xy + 0.5 * size;
+    const float2 p = (position - centre) / radius;   // -1...1 across the orb, y down
+    const float rho2 = dot(p, p);
+    const float rho = sqrt(rho2);
+    const float alpha = 1.0 - smoothstep(1.0 - 0.6 / radius, 1.0, rho);
+    if (alpha <= 0.0) {
+        return half4(0.0h);
+    }
+
+    // Refraction through the front of the sphere (normal (p, z), view ray (0, 0, -1)).
+    const float z = sqrt(max(1.0 - rho2, 0.0));
+    const float eta = 1.0 / 1.45;
+    const float cost = sqrt(max(1.0 - eta * eta * (1.0 - z * z), 0.0));
+    const float f = eta * z - cost;
+    const float rz = -eta + f * z;
+    const float t = (z + depth) / max(-rz, 0.2);
+    const float2 uv = p * (1.0 + f * t);
+
+    // A touch of colour fringing toward the rim.
+    const float edge = 1.0 - z;
+    const float ca = 0.012 * edge * edge;
+    float3 c = float3(float(layer.sample(centre + uv * (1.0 + ca) * radius).r),
+                      float(layer.sample(centre + uv * radius).g),
+                      float(layer.sample(centre + uv * (1.0 - ca) * radius).b));
+
+    // Fresnel: the rim reflects the pale surroundings.
+    c = mix(c, float3(0.97, 0.94, 1.0), 0.45 * edge * edge * edge);
+
+    // Light.
+    const float along = p.y / max(rho, 1e-4);          // -1 at the top of the rim, 1 at the bottom
+    const float top = 1.0 - smoothstep(-0.85, 0.15, along);
+    const float sheen = 0.42 * smoothstep(0.62, 0.9, rho) * (1.0 - smoothstep(0.9, 0.99, rho)) * top;
+    const float2 g = p - float2(-0.42, -0.62);
+    const float glint = 0.75 * exp(-(g.x * g.x / 0.012 + g.y * g.y / 0.004));
+    const float bottom = smoothstep(0.35, 0.95, along);
+    const float caustic = 0.42 * smoothstep(0.74, 0.9, rho) * (1.0 - smoothstep(0.9, 0.975, rho)) * bottom;
+    const float light = clamp(sheen + glint + caustic, 0.0, 1.0);
+    c = c + (1.0 - c) * light;
+
+    return half4(half3(c * alpha), half(alpha));
+}

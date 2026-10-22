@@ -38,9 +38,11 @@ launch, and "Replay onboarding" on the last screen starts it again.
   neighbours round into one outline and a budding bubble drags a neck of liquid behind it. No
   lighting: inside, the colour is a flat pale wash. Each bubble carries its own tint, and tints
   blend where their liquid meets.
-- **Photos** (`Components/BubbleFaces.swift`, `SoftPhoto`): each photo is masked once with a
-  feathered circle: sharp to the edge, with the outer quarter turning translucent so the liquid
-  shows through it. A mask, not a blur. No borders or shadows.
+- **Photos** (`Components/BubbleFaces.swift`): each photo is a glass orb, drawn by the `glassOrb`
+  shader in `Bubbles/Liquid.metal`: the photo sits a little behind a glass sphere, gently
+  magnified and bending round at the rim, with soft reflections on the rim and a bright crescent
+  at the bottom. In a debug build, triple-tap the onboarding screen to switch to the plain look, a
+  sharp photo under a feathered circular mask (`SoftPhoto`).
 - **Motion** (`Bubbles/BubbleEngine.swift`): each bubble is a pure function of time driven by
   closed-form springs, so interrupting a transition never jumps. A hidden bubble rides inside
   its parent every frame, which is why new friends bud out of a moving parent rather than out of

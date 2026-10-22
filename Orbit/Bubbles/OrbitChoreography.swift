@@ -109,23 +109,18 @@ enum OrbitChoreography {
         return BubbleLayout(targets: targets)
     }
 
-    /// The drop blooms into the ring: nine photos, big and overlapping a little, one liquid around
-    /// them and nothing in the middle. Copied from the reference frame: photo radius 45.3 (49 on
-    /// screen, where the reference's photos fade out), and each photo's angle and distance from
-    /// the ring's centre as measured, including
-    /// its small irregularities, which are what give the outline its uneven scallops.
+    /// The drop blooms into the ring: nine glass orbs, evenly spaced with a 2pt gap between
+    /// neighbours (like the reference's photos), one liquid around them and nothing in the middle.
+    /// Ring radius and orb size keep the reference's outer edge and band thickness.
     private static var world: BubbleLayout {
-        // (degrees, 0 right and clockwise; distance from the centre in reference points)
-        let ring: [(Double, CGFloat)] = [
-            (-107.9, 117.7), (-65.1, 117.8), (-27.2, 116.8), (11.4, 117.5), (52.3, 119.0),
-            (91.9, 113.8), (130.3, 121.0), (168.8, 115.5), (-147.9, 117.5),
-        ]
+        let orbRadius: CGFloat = 40.7      // 44pt on screen
+        let ringRadius: CGFloat = 121.8    // neighbours 2pt apart on screen
         var targets = tucked()
         targets[earth] = BubbleTarget(radius: 0, moveDelay: 0.2)
-        for (i, spot) in ring.enumerated() {
+        for i in 0..<9 {
             targets[1 + i] = BubbleTarget(
-                center: polar(spot.1, spot.0),
-                radius: 45.3,
+                center: polar(ringRadius, -90 + 40 * Double(i)),
+                radius: orbRadius,
                 appearDelay: 0.25 + 0.06 * Double(i)
             )
         }
@@ -143,11 +138,10 @@ enum OrbitChoreography {
     // MARK: Helpers
 
     /// The liquid's reach beyond a photo's edge, in reference points, to the middle of its soft
-    /// edge: 6.5 on a big photo, so the liquid's outline sits where the reference's does (fitted on
-    /// its ring) around photos as big as its own, tapering away for tiny ones so they grow out of
-    /// their parent smoothly.
+    /// edge: 9.7 on a big photo, so the band around the ring is as thick as the reference's, tapering
+    /// away for tiny ones so they grow out of their parent smoothly.
     static func haloWidth(_ radius: CGFloat) -> CGFloat {
-        min(6.5, 1.5 + radius * 0.11)
+        min(9.7, 2 + radius * 0.19)
     }
 
     /// Each bubble tucked inside the one it grows out of: your friends inside you, your friend's inside them.

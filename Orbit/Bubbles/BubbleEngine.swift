@@ -86,6 +86,9 @@ struct RenderedBubble: Identifiable {
     var center: CGPoint
     var radius: CGFloat
     var tint: GooTint
+    /// Stacking order: the size the bubble is animating, without the idle breathing, with the id
+    /// breaking ties. Bigger is on top; equal bubbles keep a fixed order instead of swapping.
+    var depth: Double
 }
 
 struct RenderedThread {
@@ -235,12 +238,14 @@ final class BubbleEngine {
             var center = pose.center
             var radius = pose.radius
             if !reduceMotion {
+                // Small enough that neighbours 2pt apart never touch.
                 let phase = Double(id) * 1.7
-                center.x += CGFloat(1.4 * sin(time * 0.55 + phase))
-                center.y += CGFloat(1.4 * cos(time * 0.45 + phase * 1.3))
-                radius *= CGFloat(1 + 0.01 * sin(time * 0.8 + phase))
+                center.x += CGFloat(0.4 * sin(time * 0.55 + phase))
+                center.y += CGFloat(0.4 * cos(time * 0.45 + phase * 1.3))
+                radius *= CGFloat(1 + 0.005 * sin(time * 0.8 + phase))
             }
-            return RenderedBubble(id: id, center: center, radius: radius, tint: pose.tint)
+            return RenderedBubble(id: id, center: center, radius: radius, tint: pose.tint,
+                                  depth: Double(pose.radius) + Double(id) * 0.001)
         }
     }
 

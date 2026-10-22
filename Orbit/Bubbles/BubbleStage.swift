@@ -33,6 +33,7 @@ struct BubbleStage: View {
     @State private var sequence: Task<Void, Never>? = nil
     @State private var popHaptics: Task<Void, Never>? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(PhotoStyle.storageKey) private var photoStyle = PhotoStyle.glass.rawValue
 
     private let people = Person.samples
 
@@ -48,16 +49,19 @@ struct BubbleStage: View {
                 ZStack {
                     GooLayer(bubbles: bubbles, threads: engine.threads(at: time), metrics: metrics)
                     ForEach(bubbles) { bubble in
-                        let base = faceSize(for: bubble.id)
-                        face(for: bubble.id, diameter: base)
-                            .frame(width: base, height: base)
-                            .scaleEffect(max(bubble.radius * 2 * metrics.scale / base, 0.001))
+                        // Drawn at its real size (not scaled), so the photo is resampled once and the
+                        // glass shader works in screen points.
+                        let diameter = max(bubble.radius * 2 * metrics.scale, 1)
+                        face(for: bubble.id, diameter: diameter)
+                            .frame(width: diameter, height: diameter)
                             .position(metrics.point(bubble.center))
                             .opacity(bubble.radius < 0.5 ? 0 : 1)
                             // Bigger on top: a new bubble stays hidden behind its parent's photo
                             // until it buds out, and an absorbed one slips behind whoever swallows it.
-                            // Earth sits just above the liquid and under everyone, so friends cling to its rim.
-                            .zIndex(bubble.id == OrbitChoreography.earth ? 0.5 : Double(bubble.radius))
+                            // Ordered by the size each bubble is heading for, not its breathing size,
+                            // so two photos of the same size never swap places. Earth sits just above
+                            // the liquid and under everyone, so friends cling to its rim.
+                            .zIndex(bubble.id == OrbitChoreography.earth ? 0.5 : bubble.depth)
                     }
                     ForEach(engine.labels(at: time)) { rendered in
                         if let point = labelPoint(for: rendered.label, bubbles: bubbles, metrics: metrics) {
@@ -127,17 +131,13 @@ struct BubbleStage: View {
         }
     }
 
-    /// Faces are rendered once at their largest on-screen size and only ever scaled down, so they stay sharp.
-    private func faceSize(for id: Int) -> CGFloat {
-        id == OrbitChoreography.earth ? 260 : 240
-    }
-
     @ViewBuilder
     private func face(for id: Int, diameter: CGFloat) -> some View {
+        let style = PhotoStyle(rawValue: photoStyle) ?? .glass
         if id == OrbitChoreography.earth {
-            EarthFace(diameter: diameter)
+            EarthFace(diameter: diameter, style: style)
         } else {
-            AvatarFace(person: people[(id - 1) % people.count], diameter: diameter)
+            AvatarFace(person: people[(id - 1) % people.count], diameter: diameter, style: style)
         }
     }
 
@@ -164,10 +164,10 @@ private struct GooLayer: View {
     /// units. The shoulder (with `haloWidth`) is fitted to the reference video's outline at every
     /// angle, so the outline and the scallops between photos match it. The ramp sets how soft the
     /// edge looks. In the reference video everything is equally soft, so its edges read as clean
-    /// shapes; on a sharp screen a 7pt fade next to sharp photos read as haze. 0.1 fades over about
-    /// 3.4pt: still soft, clearly a shape.
+    /// shapes; on a sharp screen a 7pt fade next to sharp photos read as haze. 0.06 fades over about
+    /// 2pt: crisp, with no stair steps (variant C, picked by the user to try).
     static let softness: CGFloat = 10.55
-    static let edge: Float = 0.1
+    static let edge: Float = 0.06
 
     var body: some View {
         let shapes = shapes

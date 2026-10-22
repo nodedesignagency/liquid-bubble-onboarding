@@ -29,19 +29,20 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
 - Top: back chevron and "Skip" in a slim row, then a centered title (30pt semibold) and one-line
   gray subtitle. Bottom: small page dots and one ink pill button ("Continue", then "Get started").
 - Liquid: the reference's effect, measured on a frame of the user's reference video. Shape fitted
-  to its outline at every angle (`GooLayer.softness` 10.55; the outline sits 56pt on screen from
-  each photo's centre, so `haloWidth` 6.5 beyond a 45.3 photo). Edge: `edge` 0.1, about 3.4pt.
-  Put through the video's own blur, our render and the reference measure and look the same at 7pt
-  `edge` 0.2, but on a sharp screen a 7pt fade next to sharp photos read as haze to the user
-  (twice), because in the video everything is equally soft. So edges are kept crisper than the
-  video measures. A thin pale margin around each photo, scallops between neighbours, flat inside,
-  no lighting. Lilac #EDDDFA, the reference's flat interior. Don't retune by eye; re-measure, and
-  compare at device resolution, not only through the video blur. One pale tint per crew (lilac,
-  butter, sky), blending where they meet.
-- Photos: big, candid, warm (Unsplash). The reference's edge is a mask, not a blur: the photo stays
-  sharp and a feathered circular mask (from 84% of the radius: 41 to 49pt on screen) turns its rim
-  translucent, so the liquid shows through the edge. A longer fade read as haze. No blurred copy, no spill, nothing outside the circle (a blurred rim read as a
-  drop shadow, the user's biggest complaint). No borders, no shadows, no dark vignette.
+  to its outline at every angle (`GooLayer.softness` 10.55, `haloWidth` 9.7 on a big photo, so
+  the band around the ring is as thick as the reference's). Edge: `edge` 0.06, about 2pt, picked
+  by the user ("variant C"). Measured through the video's own blur the reference's edge is 7pt,
+  but on a sharp screen a 7pt fade next to sharp photos read as haze (twice), because in the
+  video everything is equally soft. Scallops between neighbours, flat inside, no lighting. Lilac
+  #EDDDFA, the reference's flat interior. Re-measure rather than retune by eye, and compare at
+  device resolution. One pale tint per crew (lilac, butter, sky), blending where they meet.
+- Photos: big, candid, warm (Unsplash), each a glass orb (the `glassOrb` shader in `Liquid.metal`,
+  `PhotoStyle.glass`, inspired by the Wabi app the user showed): the photo sits a little behind a
+  glass sphere, gently magnified in the middle and bending round at the rim, with a soft window
+  reflection on the top rim, a small glint at the top left and a bright crescent at the bottom.
+  No shadows, no dark rim. The older look, a sharp photo under a feathered mask
+  (`PhotoStyle.mask`, `SoftPhoto`), stays available: triple-tap the onboarding screen in a debug
+  build to switch. Neighbouring photos never overlap: about 2pt apart, like the reference.
 - Motion: the user now wants the reference's bounce (overshoot on arrivals and on the bloom),
   smooth elsewhere. Earlier "no bouncy springs" is superseded; still no jittery or rubbery idle.
 
@@ -64,9 +65,8 @@ edges, but wanted an original story, which is the current one.
 3. `.circle` "Your circle grows": three friends bud out of each of you; each bud's neck stretches
    into a thread instead of snapping, making one connected liquid network.
 4. `.world` "Your world, in orbit": everything drains into one drop (keyframe 1), which blooms into
-   the reference's ring: nine photos (radius 45.3, at the reference's measured angles and distances,
-   about 117 from the centre, overlapping a little), empty
-   middle, slowly turning (keyframe 2). Earth is out of this scene for now (its dark NASA rim); the pastel globe can
+   the ring: nine glass orbs (radius 40.7, evenly spaced on a ring of radius 121.8, so neighbours
+   are 2pt apart), empty middle, slowly turning (keyframe 2). Earth is out of this scene for now (its dark NASA rim); the pastel globe can
    return to the middle later.
 5. `.collapse` after "Get started": everything melts into Earth, which shrinks to nothing, then the
    placeholder home screen plays `.world` again.
@@ -87,8 +87,8 @@ edges, but wanted an original story, which is the current one.
   are separate views on top, layered by size (Earth just above the liquid, under everyone). The
   stage is laid out in a slot between header and footer but draws full screen.
 - `Orbit/Bubbles/SpringCurve.swift`: spring presets.
-- `Orbit/Components/BubbleFaces.swift`: `SoftPhoto` masks each photo once with a feathered circle;
-  `AvatarFace`, `EarthFace`.
+- `Orbit/Components/BubbleFaces.swift`: `PhotoStyle`, `GlassOrb` (applies the `glassOrb` shader),
+  `SoftPhoto` (the feathered mask), `AvatarFace`, `EarthFace`.
 - `Orbit/Onboarding/`: copy (`OnboardingStep`), screen (`OnboardingView`), controls.
 - `Orbit/Theme/Theme.swift`: colors, including the liquid's light, base, deep and shade.
 - `Orbit/Assets.xcassets`: `earth`, `friend-1` (you) to `friend-9`.
@@ -99,6 +99,9 @@ SwiftUI gotchas learned on device:
   edge, an opaque fill and painted-on highlights. Don't go back to it; the shader's threshold is a
   soft ramp computed per pixel, not a filter.
 - Any view-level blur on the goo beyond ~1pt makes the rim fade out like a drop shadow.
+- Stacking: photos are ordered by `RenderedBubble.depth` (the animated size without the idle
+  breathing, id as tie-break). Ordering by the breathing radius made equal photos that overlapped
+  swap places every second or so (the user saw it as "z-index shifting").
 - The shader can't be compiled in a cloud session (no Metal toolchain). Keep `Liquid.metal` simple
   and standard, and mirror any change in `tools/preview/render.py` (`shoulder`) so the preview stays
   truthful.

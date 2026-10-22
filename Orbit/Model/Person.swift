@@ -3,13 +3,17 @@ import UIKit
 struct Person: Identifiable {
     let id: Int
     let name: String
-    /// The asset catalog image `friend-<id>`, softened for its bubble.
+    /// The asset catalog image `friend-<id>`, as is (the glass orb shader works on it directly).
+    let photo: UIImage?
+    /// The same photo under a feathered mask, for `PhotoStyle.mask`.
     let softPhoto: UIImage?
 
     init(id: Int, name: String) {
         self.id = id
         self.name = name
-        self.softPhoto = UIImage(named: "friend-\(id)").map { SoftPhoto.render($0, diameter: 240) }
+        let image = UIImage(named: "friend-\(id)")
+        self.photo = image
+        self.softPhoto = image.map { SoftPhoto.render($0, diameter: 240) }
     }
 
     var initials: String {

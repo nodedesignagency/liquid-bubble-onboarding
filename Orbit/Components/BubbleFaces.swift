@@ -1,51 +1,103 @@
 import SwiftUI
 import UIKit
 
-/// A friend's photo, already softened (see `SoftPhoto`). Falls back to initials if the photo is missing.
+/// How photos sit in the liquid. Triple-tap the onboarding screen in a debug build to switch.
+enum PhotoStyle: String {
+    /// Each photo is a glass orb (the `glassOrb` shader in `Liquid.metal`).
+    case glass
+    /// The sharp photo under a feathered circular mask (`SoftPhoto`).
+    case mask
+
+    static let storageKey = "photoStyle"
+}
+
+/// A friend's photo at `diameter`, as a glass orb or masked. Falls back to initials if the photo is missing.
 struct AvatarFace: View {
     let person: Person
     let diameter: CGFloat
+    let style: PhotoStyle
 
     var body: some View {
-        if let photo = person.softPhoto {
-            Image(uiImage: photo)
-                .resizable()
-                .frame(width: diameter, height: diameter)
-        } else {
-            Text(person.initials)
-                .font(.system(size: diameter * 0.36, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: diameter, height: diameter)
-                .background(Theme.inkSecondary, in: Circle())
+        switch style {
+        case .glass:
+            if let photo = person.photo {
+                GlassOrb(image: photo, diameter: diameter)
+            } else {
+                initials
+            }
+        case .mask:
+            if let photo = person.softPhoto {
+                Image(uiImage: photo)
+                    .resizable()
+                    .frame(width: diameter, height: diameter)
+            } else {
+                initials
+            }
         }
+    }
+
+    private var initials: some View {
+        Text(person.initials)
+            .font(.system(size: diameter * 0.36, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(width: diameter, height: diameter)
+            .background(Theme.inkSecondary, in: Circle())
     }
 }
 
 /// The globe everyone buds out of.
 struct EarthFace: View {
-    static let photo = UIImage(named: "earth").map { SoftPhoto.render($0, diameter: 260) }
+    static let photo = UIImage(named: "earth")
+    static let softPhoto = photo.map { SoftPhoto.render($0, diameter: 260) }
 
     let diameter: CGFloat
+    let style: PhotoStyle
 
     var body: some View {
-        if let photo = Self.photo {
-            Image(uiImage: photo)
-                .resizable()
-                .frame(width: diameter, height: diameter)
+        switch style {
+        case .glass:
+            if let photo = Self.photo {
+                GlassOrb(image: photo, diameter: diameter)
+            }
+        case .mask:
+            if let photo = Self.softPhoto {
+                Image(uiImage: photo)
+                    .resizable()
+                    .frame(width: diameter, height: diameter)
+            }
         }
     }
 }
 
-/// The reference's photo edge: a sharp photo under a feathered circular mask. It is a mask, not a
-/// blur: the photo stays sharp to the edge and the edge turns translucent over the outer quarter
-/// of the radius, so the liquid behind shows through it. Nothing is drawn outside the circle and
-/// nothing is blurred, so no ring of any kind can form around it. Rendered once per photo, so the
-/// animation only ever moves a flat image.
+/// A square photo seen through a glass sphere. The shader does the circle, the lens and the light.
+struct GlassOrb: View {
+    let image: UIImage
+    let diameter: CGFloat
+
+    /// How far behind the glass the photo sits: more is a stronger lens. Matches `orb` in the preview tool.
+    static let depth: Float = 0.16
+
+    var body: some View {
+        Image(uiImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+            .frame(width: diameter, height: diameter)
+            .clipped()
+            .layerEffect(
+                ShaderLibrary.glassOrb(.boundingRect, .float(Self.depth)),
+                // The lens looks inward from each pixel by at most 30% of the radius (near the rim).
+                maxSampleOffset: CGSize(width: diameter * 0.16 + 2, height: diameter * 0.16 + 2),
+                isEnabled: diameter > 2
+            )
+    }
+}
+
+/// The plain photo edge: a sharp photo under a feathered circular mask, translucent over the outer
+/// 12% of the radius so the liquid shows through it. A mask, not a blur: nothing is blurred and
+/// nothing is drawn outside the circle. Rendered once per photo.
 enum SoftPhoto {
     /// Where the feather starts, as a fraction of the radius. It reaches zero at the edge.
-    /// On a 49pt photo it fades from 41pt to 49pt: a short, clean fade. The reference's measured
-    /// 11pt fade looked like haze around sharp photos on device.
-    static let feather: CGFloat = 0.84
+    static let feather: CGFloat = 0.88
 
     /// `diameter` is in points; the image is rendered at 3x.
     static func render(_ source: UIImage, diameter: CGFloat) -> UIImage {

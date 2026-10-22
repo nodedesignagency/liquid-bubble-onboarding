@@ -13,7 +13,7 @@ os.makedirs(out_dir, exist_ok=True)
 S, W, H, FPS = 2, 402, 874, 30
 BG = np.array([0xFA, 0xFA, 0xFA], float)
 LIQ = np.array([0xED, 0xDD, 0xFA], float)   # Theme.liquid, the wash the photo rims melt into
-SOFT, EDGE = 10.55, 0.1                    # GooLayer.softness (reference pt) and edge
+SOFT, EDGE = 10.55, 0.06                   # GooLayer.softness (reference pt) and edge
 INK, INK2, HAIR = (0x1D, 0x1D, 0x1F), (0x86, 0x86, 0x8B), (0xDB, 0xDB, 0xDC)
 SLOT = (194, 748)
 scale = min(W / 372, (SLOT[1] - SLOT[0]) / 480, 1.3)
@@ -33,17 +33,55 @@ def radial_alpha(n, a, b):
     return np.clip((b - np.hypot(xx, yy) * 2) / (b - a), 0, 1)
 
 def soft_photo(im):
-    """Mirror of SoftPhoto: the sharp photo under a feathered circular mask (alpha 1 to 84% of the radius,
-    0 at the edge). A mask, not a blur."""
+    """Mirror of SoftPhoto (PhotoStyle.mask): the sharp photo under a feathered circular mask (alpha 1 to 88%
+    of the radius, 0 at the edge). A mask, not a blur."""
     n = im.width
-    alpha = radial_alpha(n, 0.84, 1.0)[..., None]
+    alpha = radial_alpha(n, 0.88, 1.0)[..., None]
     return Image.fromarray(np.dstack([np.asarray(im, float), alpha * 255]).astype("uint8"), "RGBA")
 
-FACE = 320
+def smoothstep(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
+
+def bilinear(img, u, v):
+    h, w, _ = img.shape
+    u = np.clip(u, 0, w - 1.001); v = np.clip(v, 0, h - 1.001)
+    x0 = u.astype(int); y0 = v.astype(int); fx = (u - x0)[..., None]; fy = (v - y0)[..., None]
+    return img[y0, x0] * (1 - fx) * (1 - fy) + img[y0, x0 + 1] * fx * (1 - fy) + img[y0 + 1, x0] * (1 - fx) * fy + img[y0 + 1, x0 + 1] * fx * fy
+
+ORB_DEPTH = 0.16   # GlassOrb.depth
+def orb(im):
+    """Mirror of the `glassOrb` shader (PhotoStyle.glass), line for line."""
+    src = np.asarray(im, float); n = src.shape[0]
+    yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n * 2 - 1
+    rho2 = xx * xx + yy * yy; rho = np.sqrt(rho2)
+    alpha = 1 - smoothstep(1 - 1.2 / n, 1.0, rho)
+    z = np.sqrt(np.clip(1 - rho2, 0, 1)); eta = 1 / 1.45
+    cost = np.sqrt(np.clip(1 - eta * eta * (1 - z * z), 0, 1)); f = eta * z - cost; rz = -eta + f * z
+    t = (z + ORB_DEPTH) / np.maximum(-rz, 0.2)
+    ux, uy = xx * (1 + f * t), yy * (1 + f * t)
+    edge = 1 - z; ca = 0.012 * edge * edge
+    samp = lambda s: bilinear(src, (ux * s + 1) / 2 * n - 0.5, (uy * s + 1) / 2 * n - 0.5)
+    c = np.stack([samp(1 + ca)[..., 0], samp(1.0)[..., 1], samp(1 - ca)[..., 2]], -1) / 255
+    c = c + (np.array([0.97, 0.94, 1.0]) - c) * (0.45 * edge ** 3)[..., None]
+    along = yy / np.maximum(rho, 1e-4)
+    top = 1 - smoothstep(-0.85, 0.15, along)
+    sheen = 0.42 * smoothstep(0.62, 0.9, rho) * (1 - smoothstep(0.9, 0.99, rho)) * top
+    gx, gy = xx + 0.42, yy + 0.62
+    glint = 0.75 * np.exp(-(gx * gx / 0.012 + gy * gy / 0.004))
+    bottom = smoothstep(0.35, 0.95, along)
+    caustic = 0.42 * smoothstep(0.74, 0.9, rho) * (1 - smoothstep(0.9, 0.975, rho)) * bottom
+    light = np.clip(sheen + glint + caustic, 0, 1)
+    c = c + (1 - c) * light[..., None]
+    return Image.fromarray(np.dstack([np.clip(c, 0, 1) * 255, alpha * 255]).astype("uint8"), "RGBA")
+
+STYLE = os.environ.get("PHOTO_STYLE", "glass")   # PhotoStyle: glass or mask
+face_of = orb if STYLE == "glass" else soft_photo
+
+FACE = 360
 faces = {}
 for i in range(0, 10):
     path = os.path.join(assets, "earth.imageset/earth.jpg" if i == 0 else f"friend-{i}.imageset/friend-{i}.jpg")
-    faces[i] = soft_photo(Image.open(path).convert("RGB").resize((FACE, FACE), Image.LANCZOS))
+    faces[i] = face_of(Image.open(path).convert("RGB").resize((FACE, FACE), Image.LANCZOS))
 
 rows = defaultdict(list)
 with open(frames_csv) as fh:
@@ -56,9 +94,7 @@ with open(threads_csv) as fh:
         threads[int(r["frame"])].append((int(r["a"]), int(r["b"]), float(r["strength"])))
 
 def ease(x): x = min(max(x, 0), 1); return x * x * (3 - 2 * x)
-def smoothstep(e0, e1, x):
-    t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
-def halo(r): return min(6.5, 1.5 + r * 0.11)   # OrbitChoreography.haloWidth
+def halo(r): return min(9.7, 2 + r * 0.19)   # OrbitChoreography.haloWidth
 def pt(x, y): return (ox + x * scale, oy + y * scale)   # reference space -> screen points
 
 gy, gx = np.mgrid[0:H * S, 0:W * S].astype(float)

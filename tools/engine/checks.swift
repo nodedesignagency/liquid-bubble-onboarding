@@ -60,6 +60,20 @@ for scene in [OrbitScene.you, .bump, .circle, .world] {
     print("  \(scene) fused pairs: \(fused.joined(separator: " "))")
 }
 
+// 1c. At rest, no two photos overlap (so stacking order can never show), and the ring's gaps are even.
+for scene in [OrbitScene.you, .circle, .world] {
+    let player = Player(); player.play(scene, at: 0); _ = player.frame(2); player.engine.reduceMotion = true
+    let s = player.frame(9).filter { $0.radius >= 1 }
+    var gaps: [CGFloat] = []
+    for i in s.indices { for j in s.indices where j > i {
+        gaps.append(hypot(s[i].center.x - s[j].center.x, s[i].center.y - s[j].center.y) - s[i].radius - s[j].radius)
+    }}
+    if let smallest = gaps.min() {
+        print("  \(scene) smallest gap between photos: \(String(format: "%.1f", Double(smallest))) (reference points)")
+        check(smallest > 1.4, "\(scene) photos overlap or touch at rest")
+    }
+}
+
 // 2. Every ordered pair of scenes, interrupted mid-flight: no NaN, nothing teleports.
 var maxJump: CGFloat = 0
 for a in scenes { for b in scenes { for c in scenes where c != b {
