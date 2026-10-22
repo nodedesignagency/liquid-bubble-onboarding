@@ -1,4 +1,3 @@
-import SwiftUI
 import UIKit
 
 struct Person: Identifiable {
@@ -10,7 +9,7 @@ struct Person: Identifiable {
     init(id: Int, name: String) {
         self.id = id
         self.name = name
-        self.softPhoto = UIImage(named: "friend-\(id)").map { SoftPhoto.render($0, diameter: 240, wash: UIColor(Theme.liquid)) }
+        self.softPhoto = UIImage(named: "friend-\(id)").map { SoftPhoto.render($0, diameter: 240) }
     }
 
     var initials: String {

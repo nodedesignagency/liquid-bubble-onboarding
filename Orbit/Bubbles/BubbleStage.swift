@@ -50,7 +50,7 @@ struct BubbleStage: View {
                     ForEach(bubbles) { bubble in
                         let base = faceSize(for: bubble.id)
                         face(for: bubble.id, diameter: base)
-                            .frame(width: base * SoftPhoto.reach, height: base * SoftPhoto.reach)
+                            .frame(width: base, height: base)
                             .scaleEffect(max(bubble.radius * 2 * metrics.scale / base, 0.001))
                             .position(metrics.point(bubble.center))
                             .opacity(bubble.radius < 0.5 ? 0 : 1)

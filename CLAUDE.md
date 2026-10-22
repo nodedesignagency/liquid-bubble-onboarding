@@ -29,17 +29,18 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
 - Top: back chevron and "Skip" in a slim row, then a centered title (30pt semibold) and one-line
   gray subtitle. Bottom: small page dots and one ink pill button ("Continue", then "Get started").
 - Liquid: the reference's effect, measured from the user's video and reproduced: a pale
-  translucent wash about 11pt beyond each photo, a blur (shoulder 8pt) cut by a soft threshold so
-  neighbours round into one outline with shallow scallops; the visible edge fades over about 8pt
-  like the reference (a longer fade reads as fog on device), flat inside, no
+  translucent wash reaching 20pt beyond each photo (measured on the reference ring: a small margin
+  of lilac around each photo, the ring one band with scallops), a blur (shoulder 8pt) cut by a soft
+  threshold; the visible edge fades over about 8pt like the reference (a longer fade reads as fog
+  on device). Lilac is #ECDDF7, sampled from the reference's flat interior, flat inside, no
   lighting, no hard edge, bridging to neighbours that come close. Photos are big and packed
   tight (nearly touching in a ring, overlapping in a trio), so the liquid reads as a thin halo
   around a group, never as a body of liquid with small photos floating in it. One pale tint per
   crew (lilac, butter, sky), blending where they meet.
-- Photos: big, candid, warm (Unsplash). The reference's blur: a sharp middle dissolving into a
-  heavily blurred copy that spills about 20% past the circle, lightened 20% and washed 45% with the
-  liquid color so the spill is pale but visible, as in the reference. A dark spill reads as a drop shadow (the user's biggest
-  complaint), so never let the blur stay dark. No borders, no shadows, no dark vignette.
+- Photos: big, candid, warm (Unsplash). The reference's edge is a mask, not a blur: the photo stays
+  sharp and a feathered circular mask turns its outer quarter translucent, so the liquid shows
+  through the edge. No blurred copy, no spill, nothing outside the circle (a blurred rim read as a
+  drop shadow, the user's biggest complaint). No borders, no shadows, no dark vignette.
 - Motion: the user now wants the reference's bounce (overshoot on arrivals and on the bloom),
   smooth elsewhere. Earlier "no bouncy springs" is superseded; still no jittery or rubbery idle.
 
@@ -62,8 +63,8 @@ edges, but wanted an original story, which is the current one.
 3. `.circle` "Your circle grows": three friends bud out of each of you; each bud's neck stretches
    into a thread instead of snapping, making one connected liquid network.
 4. `.world` "Your world, in orbit": everything drains into one drop (keyframe 1), which blooms into
-   the reference's ring: nine photos, big and nearly touching, empty middle, slowly turning
-   (keyframe 2). Earth is out of this scene for now (its dark NASA rim); the pastel globe can
+   the reference's ring: nine photos (radius 46 on a ring of radius 126, touching), empty
+   middle, slowly turning (keyframe 2). Earth is out of this scene for now (its dark NASA rim); the pastel globe can
    return to the middle later.
 5. `.collapse` after "Get started": everything melts into Earth, which shrinks to nothing, then the
    placeholder home screen plays `.world` again.
@@ -83,8 +84,8 @@ edges, but wanted an original story, which is the current one.
   are separate views on top, layered by size (Earth just above the liquid, under everyone). The
   stage is laid out in a slot between header and footer but draws full screen.
 - `Orbit/Bubbles/SpringCurve.swift`: spring presets.
-- `Orbit/Components/BubbleFaces.swift`: `SoftPhoto` renders each photo's dissolving edge once with
-  Core Image; `AvatarFace`, `EarthFace`.
+- `Orbit/Components/BubbleFaces.swift`: `SoftPhoto` masks each photo once with a feathered circle;
+  `AvatarFace`, `EarthFace`.
 - `Orbit/Onboarding/`: copy (`OnboardingStep`), screen (`OnboardingView`), controls.
 - `Orbit/Theme/Theme.swift`: colors, including the liquid's light, base, deep and shade.
 - `Orbit/Assets.xcassets`: `earth`, `friend-1` (you) to `friend-9`.

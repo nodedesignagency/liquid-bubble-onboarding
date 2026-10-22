@@ -34,13 +34,13 @@ launch, and "Replay onboarding" on the last screen starts it again.
 - **Goo** (`Bubbles/Liquid.metal`, used by `GooLayer` in `Bubbles/BubbleStage.swift`): a per-pixel
   Metal shader, applied with `.colorEffect` over the whole stage. Every photo is a disc and every
   thread a capsule, each with the soft shoulder a Gaussian blur would give it, summed into one
-  field. Where two come close the shoulders add up and bridge, so neighbours share one lobed
-  outline and a budding bubble drags a neck of liquid behind it. There is no threshold and no
-  lighting: the edge is the shoulder itself, and inside, the colour is a flat pale wash. Each
-  bubble carries its own tint, and tints blend where their liquid meets.
-- **Photos** (`Components/BubbleFaces.swift`, `SoftPhoto`): rendered once each with Core Image: a
-  sharp middle that blurs and takes on the liquid's colour toward the rim, with the outermost
-  edge feathered out, so the photo melts into the liquid. No borders or shadows.
+  field, which is cut at 0.5 over a short ramp. Where two come close the shoulders add up, so
+  neighbours round into one outline and a budding bubble drags a neck of liquid behind it. No
+  lighting: inside, the colour is a flat pale wash. Each bubble carries its own tint, and tints
+  blend where their liquid meets.
+- **Photos** (`Components/BubbleFaces.swift`, `SoftPhoto`): each photo is masked once with a
+  feathered circle: sharp to the edge, with the outer quarter turning translucent so the liquid
+  shows through it. A mask, not a blur. No borders or shadows.
 - **Motion** (`Bubbles/BubbleEngine.swift`): each bubble is a pure function of time driven by
   closed-form springs, so interrupting a transition never jumps. A hidden bubble rides inside
   its parent every frame, which is why new friends bud out of a moving parent rather than out of

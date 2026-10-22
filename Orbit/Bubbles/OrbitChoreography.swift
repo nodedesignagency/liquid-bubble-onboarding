@@ -109,15 +109,15 @@ enum OrbitChoreography {
         return BubbleLayout(targets: targets)
     }
 
-    /// The drop blooms into the ring: nine photos, big and nearly touching, one liquid around them
-    /// and nothing in the middle. The reference's ring, measured: photo radius 40, ring radius 133.
+    /// The drop blooms into the ring: nine photos, big and touching, one liquid around them and
+    /// nothing in the middle. The reference's ring, measured: photo radius 46, ring radius 126.
     private static var world: BubbleLayout {
         var targets = tucked()
         targets[earth] = BubbleTarget(radius: 0, moveDelay: 0.2)
         for i in 0..<9 {
             targets[1 + i] = BubbleTarget(
-                center: polar(133, -90 + 40 * Double(i)),
-                radius: 40,
+                center: polar(126, -90 + 40 * Double(i)),
+                radius: 46,
                 appearDelay: 0.25 + 0.06 * Double(i)
             )
         }
@@ -134,11 +134,11 @@ enum OrbitChoreography {
 
     // MARK: Helpers
 
-    /// The band of pale liquid around a photo, in reference points, measured to the middle of its
-    /// soft edge: about 11 on a big photo (the reference's band is thin), tapering away for tiny
-    /// ones so they grow out of their parent smoothly.
+    /// The liquid's reach beyond a photo's edge, in reference points, measured to the middle of
+    /// its soft edge: 20 on a big photo, measured on the reference ring (a small margin of lilac
+    /// around each photo), tapering away for tiny ones so they grow out of their parent smoothly.
     static func haloWidth(_ radius: CGFloat) -> CGFloat {
-        min(11, 2 + radius * 0.24)
+        min(20, 3 + radius * 0.4)
     }
 
     /// Each bubble tucked inside the one it grows out of: your friends inside you, your friend's inside them.

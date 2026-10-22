@@ -12,7 +12,7 @@ ONLY = [int(x) for x in os.environ.get("FRAMES", "").split(",") if x]
 os.makedirs(out_dir, exist_ok=True)
 S, W, H, FPS = 2, 402, 874, 30
 BG = np.array([0xFA, 0xFA, 0xFA], float)
-LIQ = np.array([0xEA, 0xDD, 0xF1], float)   # Theme.liquid, the wash the photo rims melt into
+LIQ = np.array([0xEC, 0xDD, 0xF7], float)   # Theme.liquid, the wash the photo rims melt into
 SOFT, EDGE = 8.0, 0.2                      # GooLayer.softness (reference pt) and edge
 INK, INK2, HAIR = (0x1D, 0x1D, 0x1F), (0x86, 0x86, 0x8B), (0xDB, 0xDB, 0xDC)
 SLOT = (194, 748)
@@ -32,23 +32,12 @@ def radial_alpha(n, a, b):
     yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n - 0.5
     return np.clip((b - np.hypot(xx, yy) * 2) / (b - a), 0, 1)
 
-REACH = 1.2   # SoftPhoto.reach: the rendered face is this much wider than its circle, to hold the spill
 def soft_photo(im):
-    """Mirror of SoftPhoto: sharp middle dissolving into a heavily blurred copy that spills past the circle,
-    lightened and washed with the liquid's colour."""
-    n = im.width; pad = int(round(n * (REACH - 1) / 2)); m = n + 2 * pad
-    yy, xx = (np.mgrid[0:m, 0:m] + 0.5 - m / 2) / n
-    rr = np.hypot(xx, yy) * 2                      # 1.0 at the circle's edge
-    big = np.broadcast_to(LIQ, (m, m, 3)).copy(); big[pad:pad + n, pad:pad + n] = np.asarray(im, float)
-    sharp = np.where((rr > 1)[..., None], LIQ, big)
-    soft = np.asarray(Image.fromarray(sharp.astype("uint8")).filter(ImageFilter.GaussianBlur(n * 0.07)), float)
-    soft = soft + (255 - soft) * 0.2
-    soft = soft * 0.55 + LIQ * 0.45
-    a_sharp = radial_alpha(m, 0.45 / REACH, 0.78 / REACH)[..., None]
-    a_soft = radial_alpha(m, 0.9 / REACH, 1.0)[..., None]
-    rgb = sharp * a_sharp + soft * (1 - a_sharp)
-    alpha = a_sharp + a_soft * (1 - a_sharp)
-    return Image.fromarray(np.dstack([rgb, alpha * 255]).astype("uint8"), "RGBA")
+    """Mirror of SoftPhoto: the sharp photo under a feathered circular mask (alpha 1 to 78% of the radius,
+    0 at the edge). A mask, not a blur."""
+    n = im.width
+    alpha = radial_alpha(n, 0.78, 1.0)[..., None]
+    return Image.fromarray(np.dstack([np.asarray(im, float), alpha * 255]).astype("uint8"), "RGBA")
 
 FACE = 320
 faces = {}
@@ -69,7 +58,7 @@ with open(threads_csv) as fh:
 def ease(x): x = min(max(x, 0), 1); return x * x * (3 - 2 * x)
 def smoothstep(e0, e1, x):
     t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
-def halo(r): return min(11, 2 + r * 0.24)   # OrbitChoreography.haloWidth
+def halo(r): return min(20, 3 + r * 0.4)   # OrbitChoreography.haloWidth
 def pt(x, y): return (ox + x * scale, oy + y * scale)   # reference space -> screen points
 
 gy, gx = np.mgrid[0:H * S, 0:W * S].astype(float)
@@ -127,7 +116,7 @@ for fi in sorted(rows):
     order = sorted(bubbles.values(), key=lambda b: -1 if b[0] == 0 else b[3])
     for i, x, y, r, _ in order:
         if r <= 0.5: continue
-        dpx = max(1, int(round(2 * r * scale * S * REACH))); cx, cy = pt(x, y); cx, cy = cx * S, cy * S
+        dpx = max(1, int(round(2 * r * scale * S))); cx, cy = pt(x, y); cx, cy = cx * S, cy * S
         if -dpx < cx < W * S + dpx and -dpx < cy < H * S + dpx:
             frame.alpha_composite(faces[i].resize((dpx, dpx), Image.LANCZOS), (int(cx - dpx / 2), int(cy - dpx / 2)))
 

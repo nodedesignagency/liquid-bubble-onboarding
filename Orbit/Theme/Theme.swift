@@ -9,7 +9,7 @@ enum Theme {
     static let hairline = Color(hex: 0x1D1D1F, opacity: 0.14)
 
     /// The liquid, as it reads on the canvas: a pale lilac wash. Flat, no lighting.
-    static let liquid = Color(hex: 0xEADDF1)
+    static let liquid = Color(hex: 0xECDDF7)
     /// Other crews get their own wash.
     static let butter = Color(hex: 0xF4E9CA)
     static let sky = Color(hex: 0xDCE6F3)

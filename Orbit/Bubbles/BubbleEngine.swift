@@ -20,7 +20,7 @@ struct GooTint: Equatable {
     }
 
     /// Pale lilac, the default. Mirrors `Theme.liquid`.
-    static let liquid = GooTint(hex: 0xEADDF1)
+    static let liquid = GooTint(hex: 0xECDDF7)
     /// Mirrors `Theme.butter` and `Theme.sky`.
     static let butter = GooTint(hex: 0xF4E9CA)
     static let sky = GooTint(hex: 0xDCE6F3)
