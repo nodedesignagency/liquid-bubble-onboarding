@@ -161,10 +161,12 @@ private struct GooLayer: View {
     var metrics: StageMetrics
 
     /// The blur's shoulder, in reference points, and the half-width of the threshold ramp in field
-    /// units. Both fitted by least squares to the reference video's ring (with `haloWidth`), so the
-    /// outline, the scallops between photos and the softness of the edge match it.
-    static let softness: CGFloat = 10.3
-    static let edge: Float = 0.312
+    /// units. The shoulder (with `haloWidth`) is fitted to the reference video's outline at every
+    /// angle, so the outline and the scallops between photos match it. The ramp sets how soft the
+    /// edge looks: the reference's edge fades over about 7pt once the video's own blur is taken
+    /// out, and 0.2 gives 6.8pt. The earlier 0.312 faded over 9.5pt and read as blurrier.
+    static let softness: CGFloat = 10.55
+    static let edge: Float = 0.2
 
     var body: some View {
         let shapes = shapes

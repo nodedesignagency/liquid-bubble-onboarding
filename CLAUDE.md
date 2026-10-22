@@ -28,12 +28,14 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
   lavender liquid. The bubbles are the only color on screen.
 - Top: back chevron and "Skip" in a slim row, then a centered title (30pt semibold) and one-line
   gray subtitle. Bottom: small page dots and one ink pill button ("Continue", then "Get started").
-- Liquid: the reference's effect, fitted by least squares to a frame of the user's reference video
-  (`GooLayer.softness` 10.3, `edge` 0.312, `haloWidth` 8.4 on a big photo; rmse 0.145 against the
-  reference's lilac, versus 0.53 for the earlier hand-tuned numbers). A thin pale margin around
-  each photo, shallow scallops between neighbours, flat inside, no lighting. Lilac #EDDDFA, the
-  reference's flat interior. Don't retune these by eye; refit if the look must change. One pale
-  tint per crew (lilac, butter, sky), blending where they meet.
+- Liquid: the reference's effect, measured on a frame of the user's reference video. Shape fitted
+  to its outline at every angle (`GooLayer.softness` 10.55, `haloWidth` 7.8 on a big photo;
+  outline within 3pt). Edge softness from its edge profile with the video's own blur (2.6pt,
+  measured on the Dynamic Island) taken out: about 7pt, so `edge` 0.2. A plain least-squares fit
+  on the pixels picked a softer edge (0.312, 9.5pt), and the user saw it as blurrier. A thin pale
+  margin around each photo, scallops between neighbours, flat inside, no lighting. Lilac #EDDDFA,
+  the reference's flat interior. Don't retune these by eye; re-measure if the look must change.
+  One pale tint per crew (lilac, butter, sky), blending where they meet.
 - Photos: big, candid, warm (Unsplash). The reference's edge is a mask, not a blur: the photo stays
   sharp and a feathered circular mask (from 77% of the radius, measured) turns its rim translucent, so the liquid shows
   through the edge. No blurred copy, no spill, nothing outside the circle (a blurred rim read as a
@@ -60,7 +62,8 @@ edges, but wanted an original story, which is the current one.
 3. `.circle` "Your circle grows": three friends bud out of each of you; each bud's neck stretches
    into a thread instead of snapping, making one connected liquid network.
 4. `.world` "Your world, in orbit": everything drains into one drop (keyframe 1), which blooms into
-   the reference's ring: nine photos (radius 44 on a ring of radius 117, overlapping a little), empty
+   the reference's ring: nine photos (radius 44, at the reference's measured angles and distances,
+   about 117 from the centre, overlapping a little), empty
    middle, slowly turning (keyframe 2). Earth is out of this scene for now (its dark NASA rim); the pastel globe can
    return to the middle later.
 5. `.collapse` after "Get started": everything melts into Earth, which shrinks to nothing, then the
@@ -77,7 +80,8 @@ edges, but wanted an original story, which is the current one.
   your friends, 6-8 theirs, 9 one more for the ring.
 - `Orbit/Bubbles/BubbleStage.swift`: the view. `GooLayer` draws the liquid with the `liquid` Metal
   shader (`Orbit/Bubbles/Liquid.metal`) through `.colorEffect`: discs and capsules with soft
-  shoulders summed into one field, no threshold; the preview tool mirrors the same formula. Photos
+  shoulders summed into one field, cut at 0.5 over a short ramp; the preview tool mirrors the same
+  formula. Photos
   are separate views on top, layered by size (Earth just above the liquid, under everyone). The
   stage is laid out in a slot between header and footer but draws full screen.
 - `Orbit/Bubbles/SpringCurve.swift`: spring presets.
@@ -90,7 +94,8 @@ edges, but wanted an original story, which is the current one.
 SwiftUI gotchas learned on device:
 
 - The old Canvas approach (blur, then `alphaThreshold`) is what made the liquid harsh: a hard cut
-  edge, an opaque fill and painted-on highlights. Don't go back to it; the shader has no threshold.
+  edge, an opaque fill and painted-on highlights. Don't go back to it; the shader's threshold is a
+  soft ramp computed per pixel, not a filter.
 - Any view-level blur on the goo beyond ~1pt makes the rim fade out like a drop shadow.
 - The shader can't be compiled in a cloud session (no Metal toolchain). Keep `Liquid.metal` simple
   and standard, and mirror any change in `tools/preview/render.py` (`shoulder`) so the preview stays

@@ -13,7 +13,7 @@ os.makedirs(out_dir, exist_ok=True)
 S, W, H, FPS = 2, 402, 874, 30
 BG = np.array([0xFA, 0xFA, 0xFA], float)
 LIQ = np.array([0xED, 0xDD, 0xFA], float)   # Theme.liquid, the wash the photo rims melt into
-SOFT, EDGE = 10.3, 0.312                   # GooLayer.softness (reference pt) and edge
+SOFT, EDGE = 10.55, 0.2                    # GooLayer.softness (reference pt) and edge
 INK, INK2, HAIR = (0x1D, 0x1D, 0x1F), (0x86, 0x86, 0x8B), (0xDB, 0xDB, 0xDC)
 SLOT = (194, 748)
 scale = min(W / 372, (SLOT[1] - SLOT[0]) / 480, 1.3)
@@ -58,7 +58,7 @@ with open(threads_csv) as fh:
 def ease(x): x = min(max(x, 0), 1); return x * x * (3 - 2 * x)
 def smoothstep(e0, e1, x):
     t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
-def halo(r): return min(8.4, 1.5 + r * 0.157)   # OrbitChoreography.haloWidth
+def halo(r): return min(7.8, 1.5 + r * 0.143)   # OrbitChoreography.haloWidth
 def pt(x, y): return (ox + x * scale, oy + y * scale)   # reference space -> screen points
 
 gy, gx = np.mgrid[0:H * S, 0:W * S].astype(float)
