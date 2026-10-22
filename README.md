@@ -12,9 +12,15 @@ SwiftUI's blur, so expect small differences from the simulator.
 
 ## Run it
 
-Open `Orbit.xcodeproj` in Xcode 16 or later and run on an iOS 17+ simulator or device.
-There are no dependencies. Onboarding plays on every launch, and "Replay onboarding" on the
-last screen starts it again.
+Needs Xcode 16 or later. There are no dependencies.
+
+```sh
+./scripts/run.sh                  # builds and launches in the booted simulator, or the newest iPhone
+./scripts/run.sh "iPhone 16 Pro"  # or pick one
+```
+
+Or open `Orbit.xcodeproj`, choose an iPhone simulator and press ⌘R. Onboarding plays on every
+launch, and "Replay onboarding" on the last screen starts it again.
 
 ## How the liquid works
 
