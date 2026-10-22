@@ -60,6 +60,11 @@ spin. Each bud plays a soft haptic as it lets go of its parent.
 - **Photos**: replace `friend-1` (you) … `friend-8` in `Assets.xcassets`. A missing photo falls back
   to initials.
 
+## Checking changes without Xcode
+
+`SWIFTC=/path/to/swiftc tools/engine/run.sh` tests the animation engine with any Swift toolchain
+(Linux included) and records a run; `tools/preview/run.sh` renders that run into a preview video.
+
 ## Credits
 
 - Earth: NASA Goddard Space Flight Center, "Blue Marble" (public domain).
