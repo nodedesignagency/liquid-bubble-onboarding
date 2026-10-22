@@ -37,10 +37,10 @@ struct EarthFace: View {
     }
 }
 
-/// No border and no shadow: the middle of the photo stays sharp, then it blurs, lightens and takes
-/// on more and more of the liquid's colour toward the rim, until the outermost edge is the liquid
-/// itself and feathers out. Nothing dark ever reaches the edge, so there is no ring that could read
-/// as a shadow. Rendered once per photo, so the animation only ever moves a flat image.
+/// No border and no shadow: the middle of the photo stays sharp, blurs toward the rim, and the
+/// rim itself turns translucent so the liquid behind shows through it. Nothing is ever drawn
+/// outside the photo's circle, so no blurred dark content can form a ring around it that reads as
+/// a shadow. Rendered once per photo, so the animation only ever moves a flat image.
 enum SoftPhoto {
     private static let ciContext = CIContext()
 
@@ -55,41 +55,28 @@ enum SoftPhoto {
         let square = UIGraphicsImageRenderer(size: size, format: format).image { _ in
             source.draw(in: aspectFill(source.size, in: rect))
             // Fill the corners outside the circle with liquid, so the blur pulls the liquid's
-            // colour inward instead of dark corners.
+            // colour inward at the rim instead of dark corners.
             let corners = UIBezierPath(rect: rect)
             corners.append(UIBezierPath(ovalIn: rect))
             corners.usesEvenOddFillRule = true
             wash.setFill()
             corners.fill()
         }
-        let blurred = blur(square, sigma: diameter * 0.09 * format.scale)
+        let soft = blur(square, sigma: diameter * 0.05 * format.scale)
 
         return UIGraphicsImageRenderer(size: size, format: format).image { context in
             let cg = context.cgContext
-            // The rim: blurred and lightened, washed with the liquid's colour more and more toward the
-            // edge (all liquid from 85% of the radius out), then feathered out...
+            // The blurred photo, solid to 65% of the radius and fading out to nothing at the edge...
             cg.beginTransparencyLayer(auxiliaryInfo: nil)
-            blurred.draw(in: rect)
-            cg.setFillColor(UIColor.white.withAlphaComponent(0.3).cgColor)
-            cg.fill(rect)
-            tint(cg, in: rect, with: wash, from: 0.3, to: 0.85)
-            fade(cg, in: rect, from: 0.8, to: 1)
+            soft.draw(in: rect)
+            fade(cg, in: rect, from: 0.65, to: 1)
             cg.endTransparencyLayer()
             // ...under the sharp middle, which dissolves into it.
             cg.beginTransparencyLayer(auxiliaryInfo: nil)
             square.draw(in: rect)
-            fade(cg, in: rect, from: 0.5, to: 0.86)
+            fade(cg, in: rect, from: 0.4, to: 0.75)
             cg.endTransparencyLayer()
         }
-    }
-
-    /// Paints `color` over what's drawn, from nothing at `from` (a fraction of the radius) to fully at `to` and beyond.
-    private static func tint(_ cg: CGContext, in rect: CGRect, with color: UIColor, from: CGFloat, to: CGFloat) {
-        let colors = [color.withAlphaComponent(0).cgColor, color.cgColor] as CFArray
-        guard let gradient = CGGradient(colorsSpace: nil, colors: colors, locations: [from, to]) else { return }
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        cg.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center,
-                              endRadius: rect.width / 2, options: [.drawsAfterEndLocation])
     }
 
     /// Keeps what's already drawn inside `from` (a fraction of the radius) and fades it out to nothing at `to`.

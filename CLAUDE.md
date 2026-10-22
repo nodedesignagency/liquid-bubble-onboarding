@@ -29,15 +29,16 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
 - Top: back chevron and "Skip" in a slim row, then a centered title (30pt semibold) and one-line
   gray subtitle. Bottom: small page dots and one ink pill button ("Continue", then "Get started").
 - Liquid: the reference's effect, measured from the user's video and reproduced: a pale
-  translucent wash about 18pt beyond each photo with a wide soft feather, flat inside, no
+  translucent wash about 10pt beyond each photo (to the middle of its soft edge, which fades over
+  about 12pt more), flat inside, no
   lighting, no hard edge, bridging to neighbours that come close. Photos are big and packed
   tight (nearly touching in a ring, overlapping in a trio), so the liquid reads as a thin halo
   around a group, never as a body of liquid with small photos floating in it. One pale tint per
   crew (lilac, butter, sky), blending where they meet.
-- Photos: big, candid, warm (Unsplash). They dissolve into the liquid: sharp middle, then blurred,
-  lightened and washed ever more with the liquid color until the rim is pure liquid, feathered out.
-  Nothing dark may reach a photo's edge: a dark blurred rim reads as a drop shadow (the user's
-  biggest complaint). No borders, no shadows, no dark vignette.
+- Photos: big, candid, warm (Unsplash). They dissolve into the liquid: sharp middle, blurred toward
+  the rim, and the rim itself translucent (feathering from 65% of the radius) so the liquid shows
+  through it. Nothing is drawn outside the circle: a blurred rim pushed outward reads as a drop
+  shadow (the user's biggest complaint). No borders, no shadows, no dark vignette.
 - Motion: the user now wants the reference's bounce (overshoot on arrivals and on the bloom),
   smooth elsewhere. Earlier "no bouncy springs" is superseded; still no jittery or rubbery idle.
 

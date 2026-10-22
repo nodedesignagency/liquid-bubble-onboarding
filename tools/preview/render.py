@@ -13,7 +13,7 @@ os.makedirs(out_dir, exist_ok=True)
 S, W, H, FPS = 2, 402, 874, 30
 BG = np.array([0xFA, 0xFA, 0xFA], float)
 LIQ = np.array([0xEA, 0xDD, 0xF1], float)   # Theme.liquid, the wash the photo rims melt into
-SOFT, GAIN = 7.0, 1.3                      # GooLayer.softness (reference pt) and gain
+SOFT, GAIN = 6.0, 1.3                      # GooLayer.softness (reference pt) and gain
 INK, INK2, HAIR = (0x1D, 0x1D, 0x1F), (0x86, 0x86, 0x8B), (0xDB, 0xDB, 0xDC)
 SLOT = (194, 748)
 scale = min(W / 372, (SLOT[1] - SLOT[0]) / 480, 1.3)
@@ -33,19 +33,16 @@ def radial_alpha(n, a, b):
     return np.clip((b - np.hypot(xx, yy) * 2) / (b - a), 0, 1)
 
 def soft_photo(im):
-    """Mirror of SoftPhoto: corners filled with the wash; rim blurred, lightened and washed ever more
-    toward the edge (all liquid from 85% of the radius out); sharp middle dissolving into it."""
+    """Mirror of SoftPhoto: corners filled with the wash; the blurred photo solid to 65% of the radius and
+    fading out at the edge, under the sharp middle dissolving into it. Nothing drawn outside the circle."""
     n = im.width
     yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n - 0.5
     outside = (np.hypot(xx, yy) * 2 > 1)[..., None]
     sharp = np.where(outside, LIQ, np.asarray(im, float))
-    blurred = np.asarray(Image.fromarray(sharp.astype("uint8")).filter(ImageFilter.GaussianBlur(n * 0.09)), float)
-    blurred = blurred + (255 - blurred) * 0.3
-    wash = 1 - radial_alpha(n, 0.3, 0.85)[..., None]
-    rim = blurred * (1 - wash) + LIQ * wash
-    a_rim = radial_alpha(n, 0.8, 1.0)[..., None]; a_sharp = radial_alpha(n, 0.5, 0.86)[..., None]
-    rgb = sharp * a_sharp + rim * (1 - a_sharp)
-    alpha = a_sharp + a_rim * (1 - a_sharp)
+    soft = np.asarray(Image.fromarray(sharp.astype("uint8")).filter(ImageFilter.GaussianBlur(n * 0.05)), float)
+    a_soft = radial_alpha(n, 0.65, 1.0)[..., None]; a_sharp = radial_alpha(n, 0.4, 0.75)[..., None]
+    rgb = sharp * a_sharp + soft * (1 - a_sharp)
+    alpha = a_sharp + a_soft * (1 - a_sharp)
     return Image.fromarray(np.dstack([rgb, alpha * 255]).astype("uint8"), "RGBA")
 
 FACE = 320
@@ -65,7 +62,7 @@ with open(threads_csv) as fh:
         threads[int(r["frame"])].append((int(r["a"]), int(r["b"]), float(r["strength"])))
 
 def ease(x): x = min(max(x, 0), 1); return x * x * (3 - 2 * x)
-def halo(r): return min(18, 3 + r * 0.36)   # OrbitChoreography.haloWidth
+def halo(r): return min(10, 2 + r * 0.22)   # OrbitChoreography.haloWidth
 def pt(x, y): return (ox + x * scale, oy + y * scale)   # reference space -> screen points
 
 gy, gx = np.mgrid[0:H * S, 0:W * S].astype(float)

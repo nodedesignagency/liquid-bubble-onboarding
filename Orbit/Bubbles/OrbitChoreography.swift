@@ -135,10 +135,11 @@ enum OrbitChoreography {
 
     // MARK: Helpers
 
-    /// The band of pale liquid around a photo, in reference points: about 18 on a big photo,
-    /// tapering away for tiny ones so they grow out of their parent smoothly.
+    /// The band of pale liquid around a photo, in reference points, measured to the middle of its
+    /// soft edge: about 10 on a big photo (the reference's band is thin), tapering away for tiny
+    /// ones so they grow out of their parent smoothly.
     static func haloWidth(_ radius: CGFloat) -> CGFloat {
-        min(18, 3 + radius * 0.36)
+        min(10, 2 + radius * 0.22)
     }
 
     /// Each bubble tucked inside the one it grows out of: your friends inside you, your friend's inside them.

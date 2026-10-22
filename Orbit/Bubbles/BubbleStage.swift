@@ -160,8 +160,8 @@ private struct GooLayer: View {
     var threads: [RenderedThread]
     var metrics: StageMetrics
 
-    /// Width of the soft shoulder at each edge, in reference points.
-    static let softness: CGFloat = 7
+    /// Width of the soft shoulder at each edge, in reference points (the edge fades over about twice this).
+    static let softness: CGFloat = 6
     /// Lets two overlapping shoulders reach full strength while a lone edge stays soft.
     static let gain: Float = 1.3
 
