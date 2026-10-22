@@ -160,11 +160,11 @@ private struct GooLayer: View {
     var threads: [RenderedThread]
     var metrics: StageMetrics
 
-    /// The blur's shoulder, in reference points: wide, so neighbours round into each other.
-    static let softness: CGFloat = 8
-    /// Half-width of the threshold ramp, in field units. With `softness` 8 the visible edge fades
-    /// over about 8pt, measured to match the reference. A longer fade read as fog on device.
-    static let edge: Float = 0.2
+    /// The blur's shoulder, in reference points, and the half-width of the threshold ramp in field
+    /// units. Both fitted by least squares to the reference video's ring (with `haloWidth`), so the
+    /// outline, the scallops between photos and the softness of the edge match it.
+    static let softness: CGFloat = 10.3
+    static let edge: Float = 0.312
 
     var body: some View {
         let shapes = shapes

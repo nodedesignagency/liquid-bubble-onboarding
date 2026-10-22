@@ -28,17 +28,14 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
   lavender liquid. The bubbles are the only color on screen.
 - Top: back chevron and "Skip" in a slim row, then a centered title (30pt semibold) and one-line
   gray subtitle. Bottom: small page dots and one ink pill button ("Continue", then "Get started").
-- Liquid: the reference's effect, measured from the user's video and reproduced: a pale
-  translucent wash reaching 20pt beyond each photo (measured on the reference ring: a small margin
-  of lilac around each photo, the ring one band with scallops), a blur (shoulder 8pt) cut by a soft
-  threshold; the visible edge fades over about 8pt like the reference (a longer fade reads as fog
-  on device). Lilac is #ECDDF7, sampled from the reference's flat interior, flat inside, no
-  lighting, no hard edge, bridging to neighbours that come close. Photos are big and packed
-  tight (nearly touching in a ring, overlapping in a trio), so the liquid reads as a thin halo
-  around a group, never as a body of liquid with small photos floating in it. One pale tint per
-  crew (lilac, butter, sky), blending where they meet.
+- Liquid: the reference's effect, fitted by least squares to a frame of the user's reference video
+  (`GooLayer.softness` 10.3, `edge` 0.312, `haloWidth` 8.4 on a big photo; rmse 0.145 against the
+  reference's lilac, versus 0.53 for the earlier hand-tuned numbers). A thin pale margin around
+  each photo, shallow scallops between neighbours, flat inside, no lighting. Lilac #EDDDFA, the
+  reference's flat interior. Don't retune these by eye; refit if the look must change. One pale
+  tint per crew (lilac, butter, sky), blending where they meet.
 - Photos: big, candid, warm (Unsplash). The reference's edge is a mask, not a blur: the photo stays
-  sharp and a feathered circular mask turns its outer quarter translucent, so the liquid shows
+  sharp and a feathered circular mask (from 77% of the radius, measured) turns its rim translucent, so the liquid shows
   through the edge. No blurred copy, no spill, nothing outside the circle (a blurred rim read as a
   drop shadow, the user's biggest complaint). No borders, no shadows, no dark vignette.
 - Motion: the user now wants the reference's bounce (overshoot on arrivals and on the bloom),
@@ -63,7 +60,7 @@ edges, but wanted an original story, which is the current one.
 3. `.circle` "Your circle grows": three friends bud out of each of you; each bud's neck stretches
    into a thread instead of snapping, making one connected liquid network.
 4. `.world` "Your world, in orbit": everything drains into one drop (keyframe 1), which blooms into
-   the reference's ring: nine photos (radius 46 on a ring of radius 126, touching), empty
+   the reference's ring: nine photos (radius 44 on a ring of radius 117, overlapping a little), empty
    middle, slowly turning (keyframe 2). Earth is out of this scene for now (its dark NASA rim); the pastel globe can
    return to the middle later.
 5. `.collapse` after "Get started": everything melts into Earth, which shrinks to nothing, then the

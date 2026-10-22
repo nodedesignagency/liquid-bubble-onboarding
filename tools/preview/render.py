@@ -12,8 +12,8 @@ ONLY = [int(x) for x in os.environ.get("FRAMES", "").split(",") if x]
 os.makedirs(out_dir, exist_ok=True)
 S, W, H, FPS = 2, 402, 874, 30
 BG = np.array([0xFA, 0xFA, 0xFA], float)
-LIQ = np.array([0xEC, 0xDD, 0xF7], float)   # Theme.liquid, the wash the photo rims melt into
-SOFT, EDGE = 8.0, 0.2                      # GooLayer.softness (reference pt) and edge
+LIQ = np.array([0xED, 0xDD, 0xFA], float)   # Theme.liquid, the wash the photo rims melt into
+SOFT, EDGE = 10.3, 0.312                   # GooLayer.softness (reference pt) and edge
 INK, INK2, HAIR = (0x1D, 0x1D, 0x1F), (0x86, 0x86, 0x8B), (0xDB, 0xDB, 0xDC)
 SLOT = (194, 748)
 scale = min(W / 372, (SLOT[1] - SLOT[0]) / 480, 1.3)
@@ -33,10 +33,10 @@ def radial_alpha(n, a, b):
     return np.clip((b - np.hypot(xx, yy) * 2) / (b - a), 0, 1)
 
 def soft_photo(im):
-    """Mirror of SoftPhoto: the sharp photo under a feathered circular mask (alpha 1 to 78% of the radius,
+    """Mirror of SoftPhoto: the sharp photo under a feathered circular mask (alpha 1 to 77% of the radius,
     0 at the edge). A mask, not a blur."""
     n = im.width
-    alpha = radial_alpha(n, 0.78, 1.0)[..., None]
+    alpha = radial_alpha(n, 0.77, 1.0)[..., None]
     return Image.fromarray(np.dstack([np.asarray(im, float), alpha * 255]).astype("uint8"), "RGBA")
 
 FACE = 320
@@ -58,7 +58,7 @@ with open(threads_csv) as fh:
 def ease(x): x = min(max(x, 0), 1); return x * x * (3 - 2 * x)
 def smoothstep(e0, e1, x):
     t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
-def halo(r): return min(20, 3 + r * 0.4)   # OrbitChoreography.haloWidth
+def halo(r): return min(8.4, 1.5 + r * 0.157)   # OrbitChoreography.haloWidth
 def pt(x, y): return (ox + x * scale, oy + y * scale)   # reference space -> screen points
 
 gy, gx = np.mgrid[0:H * S, 0:W * S].astype(float)
