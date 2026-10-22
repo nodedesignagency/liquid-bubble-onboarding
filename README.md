@@ -1,15 +1,20 @@
 # Orbit: liquid bubble onboarding
 
-A SwiftUI onboarding for **Orbit**, a friend-circle app in the spirit of Bump and Snapchat, told in
-liquid bubbles:
+A SwiftUI onboarding for **Orbit**, a friend-circle app, told in liquid bubbles. There are two
+versions; the home screen at the end lets you replay either.
 
-1. **It starts with you.** One bubble, its liquid outline slowly undulating.
-2. **Bump to connect.** A friend drifts in and collides with you; you fuse into one wobbling blob,
-   then pull apart still joined by a thread of liquid.
-3. **Your circle grows.** Friends bud out of each of you. Their necks never snap; they stretch into
-   threads, so your circle becomes one connected liquid network.
-4. **Your world, in orbit.** Everything drains into one drop that swells into Earth, with friends
-   clinging to its rim like droplets, slowly orbiting.
+**v2** (the default) opens on Earth, and its glass orbs are the liquid themselves:
+
+1. **Your world.** Earth alone, big, swelling in with a bounce.
+2. **It starts with you.** Earth shrinks to a planet below, and you bud out of its surface like a
+   droplet and pinch off.
+3. **Your people find you.** Friends bud out of Earth one by one and melt onto your bubble.
+4. **Your world, in orbit.** Friends glide into two orbits around you going opposite ways, melting
+   into each other as they pass, and Earth, now small, orbits you too. After "Get started"
+   everything melts back into Earth, so a recording loops.
+
+**v1** is the first story, photos on a pale lilac liquid: it starts with you, you bump into a
+friend, your circle grows, and everyone forms a ring.
 
 ![Onboarding steps](docs/onboarding-steps.jpg)
 
@@ -27,11 +32,16 @@ Needs Xcode 16 or later. There are no dependencies.
 ```
 
 Or open `Orbit.xcodeproj`, choose an iPhone simulator and press ⌘R. Onboarding plays on every
-launch, and "Replay onboarding" on the last screen starts it again.
+launch, and "Replay v1" or "Replay v2" on the last screen plays that version.
 
 ## How the liquid works
 
-- **Goo** (`Bubbles/Liquid.metal`, used by `GooLayer` in `Bubbles/BubbleStage.swift`): a per-pixel
+- **v2 glass** (`Bubbles/GlassLiquid.swift`, the `glassLiquid` shader in `Bubbles/Liquid.metal`):
+  each photo is drawn flat where its orb is, and the shader turns that layer into glass. The orbs
+  are joined with a smooth union, so close ones melt into one shape with a neck and pinch apart
+  again; the surface is an exact sphere for a lone orb; a fisheye lens bulges each photo; light
+  sits on the rim, and a soft glow in each photo's own colour surrounds the glass.
+- **v1 goo** (`Bubbles/Liquid.metal`, used by `GooLayer` in `Bubbles/BubbleStage.swift`): a per-pixel
   Metal shader, applied with `.colorEffect` over the whole stage. Every photo is a disc and every
   thread a capsule, each with the soft shoulder a Gaussian blur would give it, summed into one
   field, which is cut at 0.5 over a short ramp. Where two come close the shoulders add up, so

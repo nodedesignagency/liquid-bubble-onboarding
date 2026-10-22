@@ -18,10 +18,14 @@ if [[ ! -f $FONTS/nunito-700.ttf ]]; then
     | while read -r weight url; do curl -sS -o "$FONTS/nunito-$weight.ttf" "$url"; done
 fi
 
+# VERSION=v2 tools/preview/run.sh renders v2 (default v1).
+VERSION="${VERSION:-v1}"
+SUFFIX=$([[ $VERSION == v2 ]] && echo "-v2" || echo "")
 rm -rf "$OUT/frames"
-python3 tools/preview/render.py build/engine/frames.csv build/engine/threads.csv Orbit/Assets.xcassets "$FONTS" "$OUT/frames"
+VERSION=$VERSION python3 tools/preview/render.py "build/engine/frames$SUFFIX.csv" "build/engine/threads$SUFFIX.csv" \
+  Orbit/Assets.xcassets "$FONTS" "$OUT/frames"
 if [[ -z "${FRAMES:-}" ]]; then
   ffmpeg -v error -y -framerate 30 -i "$OUT/frames/f_%04d.png" -vf "scale=600:-2,format=yuv420p" \
-    -c:v libx264 -crf 19 -movflags +faststart "$OUT/onboarding-preview.mp4"
-  echo "Wrote $OUT/onboarding-preview.mp4"
+    -c:v libx264 -crf 19 -movflags +faststart "$OUT/onboarding-preview$SUFFIX.mp4"
+  echo "Wrote $OUT/onboarding-preview$SUFFIX.mp4"
 fi

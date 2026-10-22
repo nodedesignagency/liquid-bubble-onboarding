@@ -9,7 +9,8 @@ struct SpringCurve {
     var response: Double
     var dampingRatio: Double
 
-    // Everything is close to critically damped: the liquid should flow, not bounce.
+    // v1 is close to critically damped: the liquid flows rather than bounces. v2 adds bouncier
+    // arrivals (`budBouncy`, `inflateBouncy`), used by targets marked `jelly` that are appearing.
 
     /// Carries a new bubble out of its parent slowly enough for the neck to stretch before it snaps.
     static let bud = SpringCurve(response: 0.95, dampingRatio: 0.82)
@@ -19,6 +20,10 @@ struct SpringCurve {
     static let glide = SpringCurve(response: 0.9, dampingRatio: 0.88)
     /// Two bubbles colliding: they squash together and settle with a soft wobble.
     static let jelly = SpringCurve(response: 0.8, dampingRatio: 0.62)
+    /// v2: a bubble budding out with the reference's bounce, overshooting a little and settling.
+    static let budBouncy = SpringCurve(response: 1.0, dampingRatio: 0.66)
+    /// v2: swelling with a bounce, like the reference's bloom.
+    static let inflateBouncy = SpringCurve(response: 0.75, dampingRatio: 0.58)
     /// Pulls a bubble back into its parent.
     static let absorb = SpringCurve(response: 0.75, dampingRatio: 1)
     /// Deflates a bubble that is being absorbed. Slower than `absorb`, so it melts in instead of vanishing.

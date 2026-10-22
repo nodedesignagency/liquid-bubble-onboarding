@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Placeholder for the real app. Onboarding ends by collapsing into Earth, and this
-/// screen picks up from there: Earth swells back and your friends bud out onto its rim.
+/// Placeholder for the real app: it keeps the last scene of the onboarding that just played
+/// running, and lets you replay either onboarding.
 struct HomeView: View {
-    var onReplayOnboarding: () -> Void
+    var version: OnboardingVersion = .v2
+    var onReplay: (OnboardingVersion) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -12,19 +13,23 @@ struct HomeView: View {
                 .foregroundStyle(Theme.ink)
                 .frame(height: 52)
 
-            BubbleStage(scene: .world)
+            BubbleStage(scene: version.homeScene, look: version.look)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Button("Replay onboarding", action: onReplayOnboarding)
-                .font(.system(size: 16, weight: .medium, design: .rounded))
-                .foregroundStyle(Theme.inkSecondary)
-                .frame(height: 44)
-                .padding(.bottom, 12)
+            HStack(spacing: 28) {
+                ForEach(OnboardingVersion.allCases, id: \.self) { option in
+                    Button("Replay \(option.rawValue)") { onReplay(option) }
+                        .font(.system(size: 16, weight: option == version ? .semibold : .medium, design: .rounded))
+                        .foregroundStyle(option == version ? Theme.ink : Theme.inkSecondary)
+                }
+            }
+            .frame(height: 44)
+            .padding(.bottom, 12)
         }
         .background(Theme.background)
     }
 }
 
 #Preview {
-    HomeView {}
+    HomeView { _ in }
 }

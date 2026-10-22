@@ -47,8 +47,20 @@ struct BubbleTarget {
     var appearDelay: Double = 0
     /// Wait before the bubble starts, when it is moving or disappearing.
     var moveDelay: Double = 0
-    /// Arrive with a soft wobble, for bubbles that collide.
+    /// Arrive with a soft wobble, for bubbles that collide. On a bubble that is appearing, it buds
+    /// out and swells with a bounce instead.
     var jelly = false
+    /// Radians per second this bubble circles `orbitCenter` at, once it gets there (positive is
+    /// clockwise on screen). Zero keeps it still.
+    var orbitRate: Double = 0
+    var orbitCenter: CGPoint = .zero
+    /// Stretches the orbit vertically (1 is a circle), measured from `orbitCenter`. `center` is
+    /// given on the unstretched circle.
+    var orbitStretch: CGFloat = 1
+    /// Bud out of the anchor's surface instead of its middle: from just inside its rim, facing
+    /// the bubble's target, so it swells out of the surface and pinches off. Set on the appearing
+    /// bubble's target.
+    var budsFromSurface = false
 }
 
 /// A thin string of liquid joining two bubbles. Time it to form just as a budding bubble would
@@ -89,6 +101,8 @@ struct RenderedBubble: Identifiable {
     /// Stacking order: the size the bubble is animating, without the idle breathing, with the id
     /// breaking ties. Bigger is on top; equal bubbles keep a fixed order instead of swapping.
     var depth: Double
+    /// Melting back into its anchor, so it should slip underneath whoever swallows it.
+    var isLeaving = false
 }
 
 struct RenderedThread {
@@ -128,6 +142,11 @@ final class BubbleEngine {
         var growStart: Double
         var move: SpringCurve
         var grow: SpringCurve
+        var orbitRate: Double = 0
+        var orbitCenter: CGPoint = .zero
+        var orbitStretch: CGFloat = 1
+        /// Starting from the anchor's surface (see `BubbleTarget.budsFromSurface`).
+        var fromSurface = false
     }
 
     private struct ThreadTrack {
@@ -183,7 +202,10 @@ final class BubbleEngine {
                 moveStart: now + target.moveDelay * delayScale,
                 growStart: now + target.moveDelay * delayScale,
                 move: .glide,
-                grow: .glide
+                grow: .glide,
+                orbitRate: reduceMotion ? 0 : target.orbitRate,
+                orbitCenter: target.orbitCenter,
+                orbitStretch: target.orbitStretch
             )
 
             if isHidden && willShow {
@@ -191,8 +213,13 @@ final class BubbleEngine {
                 // Swell inside the parent first, then drift out, so the liquid stretches into a long neck before it lets go.
                 track.growStart = start
                 track.moveStart = start + 0.12
-                track.move = .bud
-                track.grow = .inflate
+                track.move = target.jelly ? .budBouncy : .bud
+                track.grow = target.jelly ? .inflateBouncy : .inflate
+                track.fromSurface = target.budsFromSurface && track.fromAnchor != nil
+                if track.fromSurface {
+                    // Swell against the surface first, then pull away, so the neck has time to show.
+                    track.moveStart = start + 0.3
+                }
                 pops.append(target.appearDelay * delayScale + 0.55)
             } else if !isHidden && !willShow {
                 track.move = .absorb
@@ -234,7 +261,8 @@ final class BubbleEngine {
 
     /// The frame to draw at `time`, plus a slow idle drift so the liquid feels alive.
     func snapshot(at time: Double) -> [RenderedBubble] {
-        basePoses(at: time).enumerated().map { id, pose in
+        let poses = basePoses(at: time)
+        return poses.enumerated().map { id, pose in
             var center = pose.center
             var radius = pose.radius
             if !reduceMotion {
@@ -245,7 +273,8 @@ final class BubbleEngine {
                 radius *= CGFloat(1 + 0.005 * sin(time * 0.8 + phase))
             }
             return RenderedBubble(id: id, center: center, radius: radius, tint: pose.tint,
-                                  depth: Double(pose.radius) + Double(id) * 0.001)
+                                  depth: Double(pose.radius) + Double(id) * 0.001,
+                                  isLeaving: tracks[id].to.radius < 1 && tracks[id].toAnchor != nil)
         }
     }
 
@@ -285,9 +314,29 @@ final class BubbleEngine {
 
             var start = track.from.center
             if let anchor = track.fromAnchor, tracks.indices.contains(anchor), !visiting.contains(anchor) {
-                start = pose(anchor).center
+                let parent = pose(anchor)
+                start = parent.center
+                if track.fromSurface {
+                    // Just inside the parent's rim, on the side facing where this bubble is going,
+                    // pulled in by its own size so it starts as a bulge, not a bubble sitting outside.
+                    let goal = track.to.center.rotated(by: angle)
+                    let dx = goal.x - parent.center.x, dy = goal.y - parent.center.y
+                    let length = max((dx * dx + dy * dy).squareRoot(), 0.001)
+                    let q = CGFloat(track.grow.progress(at: time - track.growStart))
+                    let depth = parent.radius - track.to.radius * min(max(q, 0), 1) * 0.9
+                    start = CGPoint(x: parent.center.x + dx / length * max(depth, 0),
+                                    y: parent.center.y + dy / length * max(depth, 0))
+                }
             }
             var end = track.to.center.rotated(by: angle)
+            if track.orbitRate != 0 || track.orbitStretch != 1 {
+                // Circling its own centre: the target moves, and the spring chases it, so the
+                // bubble glides into its orbit and stays on it.
+                let around = track.orbitCenter.rotated(by: angle)
+                let a = orbitAngle(rate: track.orbitRate, since: track.moveStart, at: time)
+                end = CGPoint(x: end.x - around.x, y: end.y - around.y).rotated(by: a)
+                end = CGPoint(x: end.x + around.x, y: end.y * track.orbitStretch + around.y)
+            }
             if let anchor = track.toAnchor, tracks.indices.contains(anchor), !visiting.contains(anchor) {
                 end = pose(anchor).center
             }
@@ -306,6 +355,13 @@ final class BubbleEngine {
         }
 
         return tracks.indices.map { pose($0) }
+    }
+
+    /// How far a bubble has gone round its orbit, easing in from standing still.
+    private func orbitAngle(rate: Double, since start: Double, at time: Double) -> Double {
+        let elapsed = max(0, time - start)
+        let ramp = 1.2
+        return rate * (elapsed - ramp * (1 - exp(-elapsed / ramp)))
     }
 
     /// Eases into rotation instead of starting at full speed.

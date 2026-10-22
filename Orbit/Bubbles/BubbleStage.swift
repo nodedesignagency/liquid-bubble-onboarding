@@ -20,6 +20,14 @@ struct StageMetrics {
     }
 }
 
+/// How the stage draws its bubbles.
+enum StageLook {
+    /// Photos on a pale lilac liquid (the `liquid` shader).
+    case v1
+    /// No background liquid: the glass orbs are the liquid themselves (`GlassLiquidLayer`).
+    case v2
+}
+
 /// The liquid bubble animation. Change `scene` and the bubbles flow into the new arrangement.
 ///
 /// Give it `slot` (in global coordinates) to lay the bubbles out in one part of the screen
@@ -28,6 +36,7 @@ struct StageMetrics {
 struct BubbleStage: View {
     var scene: OrbitScene
     var slot: CGRect? = nil
+    var look: StageLook = .v1
 
     @State private var engine = BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
     @State private var sequence: Task<Void, Never>? = nil
@@ -47,8 +56,12 @@ struct BubbleStage: View {
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 let bubbles = engine.snapshot(at: time)
                 ZStack {
-                    GooLayer(bubbles: bubbles, threads: engine.threads(at: time), metrics: metrics)
-                    ForEach(bubbles) { bubble in
+                    if look == .v2 {
+                        GlassLiquidLayer(bubbles: bubbles, metrics: metrics, size: proxy.size)
+                    } else {
+                        GooLayer(bubbles: bubbles, threads: engine.threads(at: time), metrics: metrics)
+                    }
+                    ForEach(look == .v2 ? [] : bubbles) { bubble in
                         // Drawn at its real size (not scaled), so the photo is resampled once and the
                         // glass shader works in screen points.
                         let diameter = max(bubble.radius * 2 * metrics.scale, 1)
@@ -225,11 +238,11 @@ private struct StageCaption: View {
 
 #Preview {
     struct Demo: View {
-        private let scenes: [OrbitScene] = [.you, .bump, .circle, .world]
+        private let scenes: [OrbitScene] = [.planet, .rise, .gather, .orbit]
         @State private var index = 0
 
         var body: some View {
-            BubbleStage(scene: scenes[index])
+            BubbleStage(scene: scenes[index], look: .v2)
                 .background(Theme.background)
                 .onTapGesture { index = (index + 1) % scenes.count }
         }

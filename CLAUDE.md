@@ -22,7 +22,51 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
 - The user cares a lot about visual quality and calls out anything that looks generic ("AI slop").
   Think it through as a designer, check the rendered preview critically, and only then show it.
 
-## Design direction (agreed)
+## Two versions
+
+The app holds two onboardings. The home screen's "Replay v1" and "Replay v2" pick which one plays
+(remembered across launches; v2 is the default). Work on v2 unless the user says otherwise, and
+leave v1 as it is: it is the saved previous direction (commit 86737e4; a `v1` git tag exists
+locally, but the session proxy refused to push tags).
+
+- **v1**: the first story, photos on a pale lilac liquid fitted to the reference video. The design
+  notes below under "Design direction (v1)" are about it.
+- **v2** (current): the story opens on Earth, there are no threads at all (the user dislikes
+  them), and there is no background liquid: the glass orbs are the liquid themselves, in the
+  style of a screenshot the user shared (fisheye photo orbs with a soft glow in their own
+  colours). See "v2" below.
+
+## v2
+
+- Story (`OnboardingStep.v2`, scenes in `OrbitChoreography`, "MARK: v2 scenes"):
+  1. `.planet` "Your world": Earth alone, big, swelling in with a bounce.
+  2. `.rise` "It starts with you": Earth shrinks to a planet at the bottom of the stage (clear of
+     the footer) and you bud out of its surface: a droplet forms on it, Earth's outline stretches
+     into a pear, and you pinch off with a bounce.
+  3. `.gather` "Your people find you": six friends bud out of Earth one by one and settle just off
+     your edge, so the glass melts into a neck between each of them and you.
+  4. `.orbit` "Your world, in orbit": friends glide into two tall elliptical orbits around you,
+     inner clockwise, outer the other way, overlapping at the sides so they melt into each other
+     as they pass. Earth, now small, orbits you too: the world that was huge on page 1.
+  5. After "Get started": everything melts back into Earth, which swells to page 1's size, so a
+     screen recording loops.
+  The user wants something unique here, not the nine-photo ring; don't bring the ring back for v2.
+- Rendering (`Orbit/Bubbles/GlassLiquid.swift`, shader `glassLiquid` in `Liquid.metal`): every
+  photo is drawn flat 1.15x its orb (feathered beyond the orb's edge), and the shader turns the
+  layer into glass: a smooth union of the orbs (`blend` 12: orbs closer than about 8pt melt
+  together), a sphere-shaped surface, a fisheye lens (`lens` 0.42), light (a pale rim, a top
+  sheen, a glint, a bright crescent along the bottom) and a glow outside in each photo's own
+  colour. The glow colour is the most colourful tone near the photo's rim at saturation 0.38 and
+  full brightness: a grey glow on white read as a drop shadow, so it is never grey or dark.
+- Stacking in v2: smaller orbs on top, so a bud is a droplet forming on its parent's surface;
+  bubbles melting away go underneath everything (`RenderedBubble.isLeaving`).
+- Engine features added for v2: per-bubble orbits (`BubbleTarget.orbitRate`, `orbitCenter`,
+  `orbitStretch`), buds that start from the parent's surface (`budsFromSurface`), and bouncy
+  arrivals for appearing bubbles marked `jelly` (`SpringCurve.budBouncy`, `inflateBouncy`).
+- Earth is still the NASA photo (the user said to keep it for now); outside its disc the photo is
+  filled with pale blue so no black shows in the glass.
+
+## Design direction (v1)
 
 - Light, flat `#FAFAFA` canvas. SF Pro Rounded everywhere (`.fontDesign(.rounded)`). Bluish
   lavender liquid. The bubbles are the only color on screen.
@@ -57,7 +101,7 @@ The user's original reference was an Apple Photos-style "Memories" screen: clust
 bubbles in soft pastel liquid with blurred photo edges. They love its liquid quality and blurred
 edges, but wanted an original story, which is the current one.
 
-## The story (one scene per page)
+## The v1 story (one scene per page)
 
 1. `.you` "It starts with you": one big bubble (you), outline slowly undulating.
 2. `.bump` "Bump to connect": a friend drifts in from the right, collides and fuses with you
@@ -114,15 +158,15 @@ SwiftUI gotchas learned on device:
   interrupted transitions, which pairs fuse at rest, thread timing versus neck release), and
   records a scripted run. On Linux, get a toolchain from download.swift.org
   (for example swift-6.1.2-RELEASE-ubuntu24.04).
-- `tools/preview/run.sh` turns that recording into a motion preview video (needs python3 with
+- `tools/preview/run.sh` (v1) or `VERSION=v2 tools/preview/run.sh` turns that recording into a motion preview video (needs python3 with
   Pillow and NumPy, ffmpeg). It approximates the real rendering (Nunito font, approximate blur),
   so it's for judging layout and motion. Keep its copy and timings in sync with
   `OnboardingStep.swift` and `tools/engine/record.swift`.
 
 ## Open items
 
-- Waiting on the user's first Simulator recording of the "It starts with you" story; the build
-  failure from the scene rename was just fixed.
+- v2 was just built; waiting on the user's first Simulator recording of it. The `glassLiquid`
+  shader has never been compiled (no Metal toolchain in cloud sessions).
 - Globe: the NASA Earth photo has a dark rim and the user doesn't like it. Plan: generate a pastel
   lavender world-map texture with Magnific (uses the user's credits, so ask first) and spin it on a
   real 3D sphere (SceneKit) inside the Earth bubble. The user chose to decide this later.

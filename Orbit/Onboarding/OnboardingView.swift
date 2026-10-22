@@ -3,6 +3,7 @@ import SwiftUI
 /// Title and one line at the top, the liquid bubbles in the middle, the button at the bottom.
 /// Everything except the bubbles stays quiet.
 struct OnboardingView: View {
+    var version: OnboardingVersion = .v2
     var onFinish: () -> Void
 
     @State private var index = 0
@@ -11,7 +12,7 @@ struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(PhotoStyle.storageKey) private var photoStyle = PhotoStyle.glass.rawValue
 
-    private let steps = OnboardingStep.all
+    private var steps: [OnboardingStep] { version.steps }
     private var step: OnboardingStep { steps[index] }
     private var isLast: Bool { index == steps.count - 1 }
 
@@ -19,7 +20,7 @@ struct OnboardingView: View {
         ZStack {
             // Drawn full screen behind the text, but laid out in the slot between header and footer,
             // so bubbles that wander off slide past the real edge of the screen.
-            BubbleStage(scene: isLeaving ? .collapse : step.scene, slot: stageSlot)
+            BubbleStage(scene: isLeaving ? version.finishScene : step.scene, slot: stageSlot, look: version.look)
                 .ignoresSafeArea()
             VStack(spacing: 0) {
                 topBar
@@ -43,8 +44,9 @@ struct OnboardingView: View {
         .contentShape(Rectangle())
         .gesture(swipe)
         #if DEBUG
-        // For comparing looks while we iterate: triple-tap switches glass orbs and masked photos.
+        // v1 only, for comparing looks while we iterate: triple-tap switches glass orbs and masked photos.
         .onTapGesture(count: 3) {
+            guard version == .v1 else { return }
             photoStyle = photoStyle == PhotoStyle.glass.rawValue ? PhotoStyle.mask.rawValue : PhotoStyle.glass.rawValue
         }
         #endif
@@ -147,7 +149,8 @@ struct OnboardingView: View {
         guard !isLeaving else { return }
         withAnimation(.smooth(duration: 0.4)) { isLeaving = true }
         Task { @MainActor in
-            try? await Task.sleep(for: .seconds(reduceMotion ? 0.4 : 1.3))
+            // v2 waits for Earth to swell back in full, so a recording ends on its first frame.
+            try? await Task.sleep(for: .seconds(reduceMotion ? 0.4 : (version == .v2 ? 2.0 : 1.3)))
             onFinish()
         }
     }

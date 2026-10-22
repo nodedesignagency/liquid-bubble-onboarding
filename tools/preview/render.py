@@ -1,6 +1,7 @@
 # Motion preview of the onboarding, driven by the Swift engine's recorded bubbles and threads.
-# Keep `steps` (copy and timings) in sync with Onboarding/OnboardingStep.swift and tools/engine/record.swift.
-# Mirrors GooLayer (the `liquid` shader: soft discs and capsules summed, no threshold), SoftPhoto, and the chrome.
+# Keep the steps (copy and timings) in sync with Onboarding/OnboardingStep.swift and tools/engine/record.swift.
+# VERSION=v1 mirrors GooLayer (the `liquid` shader) and the photo styles; VERSION=v2 mirrors
+# GlassLiquidLayer (the `glassLiquid` shader) and GlassPhoto. Both draw the same chrome.
 # Nunito stands in for SF Pro Rounded. iPhone 17 Pro sized (402 x 874 pt).
 import csv, sys, os, math
 from collections import defaultdict
@@ -19,11 +20,16 @@ SLOT = (194, 748)
 scale = min(W / 372, (SLOT[1] - SLOT[0]) / 480, 1.3)
 ox, oy = W / 2, (SLOT[0] + SLOT[1]) / 2
 
-steps = [(0.0, "It starts with you", "Your orbit begins with a single bubble."),
-         (3.0, "Bump to connect", "Tap phones with a friend to join bubbles."),
-         (6.8, "Your circle grows", "Friends of friends, one bubble away."),
-         (10.6, "Your world, in orbit", "Everyone you love, wherever they are.")]
-LEAVE = 15.0
+VERSION = os.environ.get("VERSION", "v1")
+STEPS_V1 = [(0.0, "It starts with you", "Your orbit begins with a single bubble."),
+            (3.0, "Bump to connect", "Tap phones with a friend to join bubbles."),
+            (6.8, "Your circle grows", "Friends of friends, one bubble away."),
+            (10.6, "Your world, in orbit", "Everyone you love, wherever they are.")]
+STEPS_V2 = [(0.0, "Your world", "Everyone you love is somewhere in it."),
+            (3.0, "It starts with you", "Your own bubble, rising out of it."),
+            (6.4, "Your people find you", "Friends rise up and join your bubble."),
+            (10.8, "Your world, in orbit", "Now it all moves around you.")]
+steps, LEAVE = (STEPS_V2, 17.0) if VERSION == "v2" else (STEPS_V1, 15.0)
 
 f = lambda w, s: ImageFont.truetype(os.path.join(fonts, f"nunito-{w}.ttf"), int(s * S))
 title_font, sub_font, btn_font, skip_font = f(700, 30), f(400, 17), f(700, 17), f(600, 16)
@@ -87,7 +93,7 @@ rows = defaultdict(list)
 with open(frames_csv) as fh:
     for r in csv.DictReader(fh):
         tint = np.array([float(r["tr"]), float(r["tg"]), float(r["tb"])]) * 255
-        rows[int(r["frame"])].append((int(r["id"]), float(r["x"]), float(r["y"]), float(r["r"]), tint))
+        rows[int(r["frame"])].append((int(r["id"]), float(r["x"]), float(r["y"]), float(r["r"]), tint, float(r["depth"]) - (10000 if r["leaving"] == "1" else 0)))
 threads = defaultdict(list)
 with open(threads_csv) as fh:
     for r in csv.DictReader(fh):
@@ -122,39 +128,151 @@ def header_layer(j, alpha, blur):
         tw = od.textlength(ln, font=sub_font); od.text(((W * S - tw) / 2, y), ln, font=sub_font, fill=INK2 + (int(255 * alpha),)); y += 23 * S
     return ov.filter(ImageFilter.GaussianBlur(blur * S)) if blur > 0.2 else ov
 
+# ---- v2: GlassPhoto and the glassLiquid shader, line for line ----
+BLEND, LENS, GLOW_W, GLOW_S, REACH2 = 12.0, 0.42, 5.0, 0.55, 1.15   # GlassLiquidLayer, GlassPhoto.reach
+
+def glass_photo(path, is_earth):
+    """Mirror of GlassPhoto.render: drawn 1.15x the orb, solid to the orb's edge, feathered beyond."""
+    n = FACE
+    src = Image.open(path).convert("RGB")
+    if is_earth:
+        canvas = np.broadcast_to(np.array([0.80, 0.87, 0.95]) * 255, (n, n, 3)).copy()
+        g = int(round(n / REACH2)); off = (n - g) // 2
+        globe = np.asarray(src.resize((g, g), Image.LANCZOS), float)
+        yy, xx = (np.mgrid[0:g, 0:g] + 0.5) / g - 0.5; inside = (np.hypot(xx, yy) * 2 < 1 - 0.024)[..., None]
+        canvas[off:off + g, off:off + g] = np.where(inside, globe, canvas[off:off + g, off:off + g])
+    else:
+        canvas = np.asarray(src.resize((n, n), Image.LANCZOS), float)
+    alpha = radial_alpha(n, 1 / REACH2, 1.0)
+    # glow colour: the ring just inside the orb's rim, more colourful, lifted to a pale tint
+    import colorsys
+    small = np.asarray(Image.fromarray(canvas.astype("uint8")).resize((32, 32), Image.BILINEAR), float) / 255
+    yy, xx = (np.mgrid[0:32, 0:32] + 0.5) / 32 - 0.5; rho = np.hypot(xx, yy) * 2 * REACH2
+    ring = small[(rho > 0.6) & (rho < 0.98)]
+    w = (ring.max(axis=1) - ring.min(axis=1)) ** 2 + 1e-4
+    c = (ring * w[:, None]).sum(axis=0) / w.sum()
+    h, s_, v = colorsys.rgb_to_hsv(*c)
+    c = np.array(colorsys.hsv_to_rgb(h, 0.38, 1.0)) if s_ > 0.06 else np.array([0.86, 0.84, 0.98])
+    premult = canvas * alpha[..., None]
+    return np.dstack([premult, alpha * 255]), c
+
+def smoothstep(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
+
+def sample_premult(layer, x, y):
+    """Bilinear sample of a premultiplied RGBA layer (0..1) at positions in points."""
+    h, w, _ = layer.shape
+    u = np.clip(x * S - 0.5, 0, w - 1.001); v = np.clip(y * S - 0.5, 0, h - 1.001)
+    x0 = u.astype(int); y0 = v.astype(int); fx = (u - x0)[..., None]; fy = (v - y0)[..., None]
+    return (layer[y0, x0] * (1 - fx) * (1 - fy) + layer[y0, x0 + 1] * fx * (1 - fy)
+            + layer[y0 + 1, x0] * (1 - fx) * fy + layer[y0 + 1, x0 + 1] * fx * fy)
+
+def glass_liquid(layer, orbs, px, py):
+    """Mirror of the glassLiquid shader over the pixels at (px, py). orbs: (x, y, r, glow) in points."""
+    blend, glow_w = BLEND * scale, GLOW_W * scale
+    bs = [((o[2] ** 2) - ((px - o[0]) ** 2 + (py - o[1]) ** 2)) / max(o[2], 0.5) for o in orbs]
+    m = np.max(bs, axis=0)
+    total = np.zeros_like(px); radius = np.zeros_like(px); gx_ = np.zeros_like(px); gy_ = np.zeros_like(px); glow = np.zeros(px.shape + (3,))
+    for o, b in zip(orbs, bs):
+        w = np.exp((b - m) / blend); r = max(o[2], 0.5)
+        total += w; radius += w * r; gx_ += w * (px - o[0]) / r; gy_ += w * (py - o[1]) / r; glow += w[..., None] * o[3]
+    radius /= total; gx_ /= total; gy_ /= total; glow /= total[..., None]
+    b = m + blend * np.log(total)
+    sd = b / np.maximum(2 * np.hypot(gx_, gy_), 1e-3)
+    alpha = smoothstep(-0.75, 0.75, sd)
+    halo = GLOW_S * np.exp(-np.maximum(-sd, 0) / glow_w)
+    halo = np.where(m < -12 * glow_w, 0, halo)
+    h = np.sqrt(np.maximum(radius * b, 0))
+    nx, ny, nz = radius * gx_, radius * gy_, h + 1e-3
+    ln = np.sqrt(nx * nx + ny * ny + nz * nz); nx, ny, nz = nx / ln, ny / ln, nz / ln
+    edge = 1 - nz
+    ox_, oy_ = -LENS * h * nx, -LENS * h * ny
+    sg = sample_premult(layer, px + ox_, py + oy_)
+    sr = sample_premult(layer, px + ox_ * (1 + 0.12 * edge), py + oy_ * (1 + 0.12 * edge))
+    sb = sample_premult(layer, px + ox_ * (1 - 0.12 * edge), py + oy_ * (1 - 0.12 * edge))
+    c = np.stack([sr[..., 0], sg[..., 1], sb[..., 2]], -1) + (1 - sg[..., 3:4]) * np.array([0.95, 0.95, 0.97])
+    c = c + (np.array([0.97, 0.96, 1.0]) - c) * (0.28 * edge ** 3)[..., None]
+    dl = np.maximum(np.hypot(nx, ny), 1e-4); dy = ny / dl
+    hv = np.array([0.55, -0.75, 0.55]); hv = hv / np.linalg.norm(hv) + np.array([0, 0, 1.0]); hv = hv / np.linalg.norm(hv)
+    glint = 0.85 * np.maximum(nx * hv[0] + ny * hv[1] + nz * hv[2], 0) ** 120
+    top = 1 - smoothstep(-0.85, 0.1, dy)
+    sheen = 0.30 * smoothstep(0.30, 0.65, edge) * (1 - smoothstep(0.65, 0.95, edge)) * top
+    bottom = smoothstep(0.25, 0.95, dy)
+    caustic = 0.55 * smoothstep(0.42, 0.75, edge) * (1 - smoothstep(0.80, 0.98, edge)) * bottom
+    c = c + (1 - c) * np.clip(glint + sheen + caustic, 0, 1)[..., None]
+    a = alpha[..., None]; hl = halo[..., None]
+    premult = c * a + glow * hl * (1 - a)
+    return premult, (alpha + halo * (1 - alpha))
+
+glass = {}
+if VERSION == "v2":
+    for i in range(0, 10):
+        path = os.path.join(assets, "earth.imageset/earth.jpg" if i == 0 else f"friend-{i}.imageset/friend-{i}.jpg")
+        glass[i] = glass_photo(path, i == 0)
+
+def draw_v2(bubbles):
+    """The photo layer (smaller on top), then glassLiquid over it. Returns an RGBA frame."""
+    # smaller on top; bubbles melting away underneath everything (their depth is pushed down by 10000)
+    vis = sorted([b for b in bubbles.values() if b[3] > 0.5], key=lambda b: (b[5] >= -5000, -b[5]))
+    layer = np.zeros((H * S, W * S, 4))
+    orbs = []
+    for i, x, y, r, _, _ in vis:
+        cx, cy = pt(x, y); rr = r * scale
+        orbs.append((cx, cy, rr, glass[i][1]))
+        dpx = max(2, int(round(2 * rr * REACH2 * S)))
+        img = np.asarray(Image.fromarray(glass[i][0].astype("uint8"), "RGBA").resize((dpx, dpx), Image.BILINEAR), float) / 255
+        X0, Y0 = int(round(cx * S - dpx / 2)), int(round(cy * S - dpx / 2))
+        xa, ya, xb, yb = max(X0, 0), max(Y0, 0), min(X0 + dpx, W * S), min(Y0 + dpx, H * S)
+        if xb <= xa or yb <= ya: continue
+        piece = img[ya - Y0:yb - Y0, xa - X0:xb - X0]
+        layer[ya:yb, xa:xb] = piece + layer[ya:yb, xa:xb] * (1 - piece[..., 3:4])
+    out = np.broadcast_to(BG / 255, (H * S, W * S, 3)).copy()
+    if orbs:
+        # only where something can show: the orbs' boxes plus the glow
+        pad = 12 * GLOW_W * scale
+        x0 = max(int((min(o[0] - o[2] for o in orbs) - pad) * S), 0); x1 = min(int((max(o[0] + o[2] for o in orbs) + pad) * S), W * S)
+        y0 = max(int((min(o[1] - o[2] for o in orbs) - pad) * S), 0); y1 = min(int((max(o[1] + o[2] for o in orbs) + pad) * S), H * S)
+        if x1 > x0 and y1 > y0:
+            prem, a = glass_liquid(layer, orbs, PX[y0:y1, x0:x1], PY[y0:y1, x0:x1])
+            out[y0:y1, x0:x1] = prem + out[y0:y1, x0:x1] * (1 - a[..., None])
+    return Image.fromarray((np.clip(out, 0, 1) * 255).astype("uint8")).convert("RGBA")
+
 for fi in sorted(rows):
     if ONLY and fi not in ONLY: continue
     t = fi / FPS
     bubbles = {b[0]: b for b in rows[fi]}
+    if VERSION == "v2":
+        frame = draw_v2(bubbles)
 
-    # The liquid: one field of soft discs (photos) and capsules (threads), tinted by whoever contributes.
-    field = np.zeros((H * S, W * S)); tint = np.zeros((H * S, W * S, 3))
-    def add(w, color):
-        global field, tint
-        field = field + w; tint = tint + w[..., None] * color
-    for i, x, y, r, color in bubbles.values():
-        if r <= 0.5: continue
-        cx, cy = pt(x, y)
-        add(shoulder(np.hypot(PX - cx, PY - cy), (r + halo(r)) * scale), color)
-    for a, b, s_ in threads.get(fi, []):
-        A, B = bubbles[a], bubbles[b]
-        if A[3] <= 1 or B[3] <= 1: continue
-        (ax, ay), (bx, by) = pt(A[1], A[2]), pt(B[1], B[2])
-        vx, vy = bx - ax, by - ay
-        u = np.clip(((PX - ax) * vx + (PY - ay) * vy) / max(vx * vx + vy * vy, 1e-4), 0, 1)
-        radius = 8 * min(s_, 1.2) * scale * (0.75 + 0.25 * np.abs(2 * u - 1))
-        add(shoulder(np.hypot(PX - (ax + u * vx), PY - (ay + u * vy)), radius), (A[4] + B[4]) / 2)
-    alpha = smoothstep(0.5 - EDGE, 0.5 + EDGE, field)[..., None]
-    color = tint / np.maximum(field, 1e-9)[..., None]
-    frame = Image.fromarray((color * alpha + base * (1 - alpha)).astype("uint8")).convert("RGBA")
+    else:
+        # The liquid: one field of soft discs (photos) and capsules (threads), tinted by whoever contributes.
+        field = np.zeros((H * S, W * S)); tint = np.zeros((H * S, W * S, 3))
+        def add(w, color):
+            global field, tint
+            field = field + w; tint = tint + w[..., None] * color
+        for i, x, y, r, color, _ in bubbles.values():
+            if r <= 0.5: continue
+            cx, cy = pt(x, y)
+            add(shoulder(np.hypot(PX - cx, PY - cy), (r + halo(r)) * scale), color)
+        for a, b, s_ in threads.get(fi, []):
+            A, B = bubbles[a], bubbles[b]
+            if A[3] <= 1 or B[3] <= 1: continue
+            (ax, ay), (bx, by) = pt(A[1], A[2]), pt(B[1], B[2])
+            vx, vy = bx - ax, by - ay
+            u = np.clip(((PX - ax) * vx + (PY - ay) * vy) / max(vx * vx + vy * vy, 1e-4), 0, 1)
+            radius = 8 * min(s_, 1.2) * scale * (0.75 + 0.25 * np.abs(2 * u - 1))
+            add(shoulder(np.hypot(PX - (ax + u * vx), PY - (ay + u * vy)), radius), (A[4] + B[4]) / 2)
+        alpha = smoothstep(0.5 - EDGE, 0.5 + EDGE, field)[..., None]
+        color = tint / np.maximum(field, 1e-9)[..., None]
+        frame = Image.fromarray((color * alpha + base * (1 - alpha)).astype("uint8")).convert("RGBA")
 
-    # Photos: Earth just above the liquid, then everyone else, bigger on top.
-    order = sorted(bubbles.values(), key=lambda b: -1 if b[0] == 0 else b[3])
-    for i, x, y, r, _ in order:
-        if r <= 0.5: continue
-        dpx = max(1, int(round(2 * r * scale * S))); cx, cy = pt(x, y); cx, cy = cx * S, cy * S
-        if -dpx < cx < W * S + dpx and -dpx < cy < H * S + dpx:
-            frame.alpha_composite(faces[i].resize((dpx, dpx), Image.LANCZOS), (int(cx - dpx / 2), int(cy - dpx / 2)))
+        # Photos: Earth just above the liquid, then everyone else, bigger on top.
+        order = sorted(bubbles.values(), key=lambda b: -1 if b[0] == 0 else b[3])
+        for i, x, y, r, _, _ in order:
+            if r <= 0.5: continue
+            dpx = max(1, int(round(2 * r * scale * S))); cx, cy = pt(x, y); cx, cy = cx * S, cy * S
+            if -dpx < cx < W * S + dpx and -dpx < cy < H * S + dpx:
+                frame.alpha_composite(faces[i].resize((dpx, dpx), Image.LANCZOS), (int(cx - dpx / 2), int(cy - dpx / 2)))
 
     leave = 1 - ease((t - LEAVE) / 0.4)
     idx = max(i for i, s_ in enumerate(steps) if s_[0] <= t)

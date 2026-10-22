@@ -23,5 +23,6 @@ cp tools/engine/record.swift "$WORK/record/main.swift"
 "$SWIFTC" -swift-version 5 -O "${ENGINE[@]}" "$WORK/checks/main.swift" -o "$WORK/checks/checks"
 "$WORK/checks/checks"
 "$SWIFTC" -swift-version 5 -O "${ENGINE[@]}" "$WORK/record/main.swift" -o "$WORK/record/record"
-"$WORK/record/record" "$WORK/frames.csv" "$WORK/threads.csv"
-echo "Recorded $WORK/frames.csv and $WORK/threads.csv"
+"$WORK/record/record" "$WORK/frames.csv" "$WORK/threads.csv" v1
+"$WORK/record/record" "$WORK/frames-v2.csv" "$WORK/threads-v2.csv" v2
+echo "Recorded $WORK/frames.csv and $WORK/threads.csv (v1), $WORK/frames-v2.csv and $WORK/threads-v2.csv (v2)"
