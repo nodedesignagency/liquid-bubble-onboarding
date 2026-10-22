@@ -1,65 +1,100 @@
 import SwiftUI
+import UIKit
+import CoreImage
 
-/// A friend's photo. Like the reference, it has no border: the edge is feathered and gently
-/// vignetted so the photo melts into the liquid around it.
-/// Falls back to initials, the way real contact avatars do, if the photo is missing.
+/// A friend's photo, already softened (see `SoftPhoto`). Falls back to initials if the photo is missing.
 struct AvatarFace: View {
     let person: Person
     let diameter: CGFloat
 
     var body: some View {
-        ZStack {
-            if let photo = person.photo {
-                Image(uiImage: photo)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Theme.inkSecondary
-                Text(person.initials)
-                    .font(.system(size: diameter * 0.36, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.white)
-            }
+        if let photo = person.softPhoto {
+            Image(uiImage: photo)
+                .resizable()
+                .frame(width: diameter, height: diameter)
+        } else {
+            Text(person.initials)
+                .font(.system(size: diameter * 0.36, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: diameter, height: diameter)
+                .background(Theme.inkSecondary, in: Circle())
         }
-        .frame(width: diameter, height: diameter)
-        .modifier(SoftCircle(diameter: diameter))
     }
 }
 
-/// The globe everyone pops out of.
+/// The globe everyone buds out of.
 struct EarthFace: View {
+    static let photo = UIImage(named: "earth").map { SoftPhoto.render($0, diameter: 260) }
+
     let diameter: CGFloat
 
     var body: some View {
-        Image("earth")
-            .resizable()
-            .scaledToFill()
-            .frame(width: diameter, height: diameter)
-            .modifier(SoftCircle(diameter: diameter))
+        if let photo = Self.photo {
+            Image(uiImage: photo)
+                .resizable()
+                .frame(width: diameter, height: diameter)
+        }
     }
 }
 
-/// Circular crop with a darkened, feathered rim instead of a hard edge.
-private struct SoftCircle: ViewModifier {
-    let diameter: CGFloat
+/// The reference's photo treatment: no border and no shadow. The middle of the photo stays sharp,
+/// the outer rim goes soft and blurry, and the very edge fades out so the photo melts into the
+/// liquid around it. Rendered once per photo, so the animation only ever moves a flat image.
+enum SoftPhoto {
+    private static let ciContext = CIContext()
 
-    func body(content: Content) -> some View {
-        content
-            .overlay(
-                RadialGradient(
-                    stops: [.init(color: .clear, location: 0.6), .init(color: .black.opacity(0.18), location: 1)],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: diameter / 2
-                )
-            )
-            .clipShape(Circle())
-            .mask {
-                RadialGradient(
-                    stops: [.init(color: .black, location: 0.86), .init(color: .clear, location: 1)],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: diameter / 2
-                )
-            }
+    /// `diameter` is in points; the image is rendered at 3x.
+    static func render(_ source: UIImage, diameter: CGFloat) -> UIImage {
+        let size = CGSize(width: diameter, height: diameter)
+        let rect = CGRect(origin: .zero, size: size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        format.opaque = false
+
+        let square = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            source.draw(in: aspectFill(source.size, in: rect))
+        }
+        let blurred = blur(square, sigma: diameter * 0.05 * format.scale)
+
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let cg = context.cgContext
+            // Blurry rim, fading out at the edge...
+            cg.beginTransparencyLayer(auxiliaryInfo: nil)
+            blurred.draw(in: rect)
+            fade(cg, in: rect, from: 0.72, to: 1)
+            cg.endTransparencyLayer()
+            // ...under a sharp middle that dissolves into it.
+            cg.beginTransparencyLayer(auxiliaryInfo: nil)
+            square.draw(in: rect)
+            fade(cg, in: rect, from: 0.5, to: 0.82)
+            cg.endTransparencyLayer()
+        }
+    }
+
+    /// Keeps what's already drawn inside `from` (a fraction of the radius) and fades it out to nothing at `to`.
+    private static func fade(_ cg: CGContext, in rect: CGRect, from: CGFloat, to: CGFloat) {
+        let colors = [UIColor.black.cgColor, UIColor.black.withAlphaComponent(0).cgColor] as CFArray
+        guard let gradient = CGGradient(colorsSpace: nil, colors: colors, locations: [from, to]) else { return }
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        cg.saveGState()
+        cg.setBlendMode(.destinationIn)
+        cg.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center,
+                              endRadius: rect.width / 2, options: [.drawsAfterEndLocation])
+        cg.restoreGState()
+    }
+
+    private static func blur(_ image: UIImage, sigma: CGFloat) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        let input = CIImage(cgImage: cgImage)
+        let output = input.clampedToExtent().applyingGaussianBlur(sigma: Double(sigma)).cropped(to: input.extent)
+        guard let result = ciContext.createCGImage(output, from: input.extent) else { return image }
+        return UIImage(cgImage: result, scale: image.scale, orientation: .up)
+    }
+
+    private static func aspectFill(_ imageSize: CGSize, in rect: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return rect }
+        let scale = max(rect.width / imageSize.width, rect.height / imageSize.height)
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height)
     }
 }

@@ -9,7 +9,7 @@ enum Theme {
     static let hairline = Color(hex: 0x1D1D1F, opacity: 0.1)
 
     /// The liquid drifts from a bluish lavender to a pinkish one across the stage. Barely: it should read as one color.
-    static let liquidGradient = [Color(hex: 0xDCD6F5), Color(hex: 0xE2D5F2), Color(hex: 0xEAD6F0)]
+    static let liquidGradient = [Color(hex: 0xD9D3F3), Color(hex: 0xDFD1F0), Color(hex: 0xE8D3EE)]
 }
 
 extension Color {

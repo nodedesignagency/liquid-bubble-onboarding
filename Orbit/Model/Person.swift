@@ -3,13 +3,13 @@ import UIKit
 struct Person: Identifiable {
     let id: Int
     let name: String
-    /// From the asset catalog image `friend-<id>`.
-    let photo: UIImage?
+    /// The asset catalog image `friend-<id>`, softened for its bubble.
+    let softPhoto: UIImage?
 
     init(id: Int, name: String) {
         self.id = id
         self.name = name
-        self.photo = UIImage(named: "friend-\(id)")
+        self.softPhoto = UIImage(named: "friend-\(id)").map { SoftPhoto.render($0, diameter: 150) }
     }
 
     var initials: String {

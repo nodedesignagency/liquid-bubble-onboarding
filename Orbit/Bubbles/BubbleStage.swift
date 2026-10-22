@@ -204,8 +204,9 @@ private struct GooLayer: View {
                 }
             }
         }
-        // Feathered edge: the reference's liquid has no hard outline.
-        .blur(radius: 3 * metrics.scale)
+        // Just enough to soften the threshold's stair-stepped edge. Any more and the rim fades
+        // out like a drop shadow instead of reading as solid liquid.
+        .blur(radius: 1.2)
     }
 
     private func haloRect(for bubble: RenderedBubble, scale: CGFloat) -> CGRect {
