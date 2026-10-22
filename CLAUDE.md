@@ -29,16 +29,18 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
 - Top: back chevron and "Skip" in a slim row, then a centered title (30pt semibold) and one-line
   gray subtitle. Bottom: small page dots and one ink pill button ("Continue", then "Get started").
 - Liquid: the reference's effect, measured on a frame of the user's reference video. Shape fitted
-  to its outline at every angle (`GooLayer.softness` 10.55, `haloWidth` 7.8 on a big photo;
-  outline within 3pt). Edge softness from its edge profile with the video's own blur (2.6pt,
-  measured on the Dynamic Island) taken out: about 7pt, so `edge` 0.2. A plain least-squares fit
-  on the pixels picked a softer edge (0.312, 9.5pt), and the user saw it as blurrier. A thin pale
-  margin around each photo, scallops between neighbours, flat inside, no lighting. Lilac #EDDDFA,
-  the reference's flat interior. Don't retune these by eye; re-measure if the look must change.
-  One pale tint per crew (lilac, butter, sky), blending where they meet.
+  to its outline at every angle (`GooLayer.softness` 10.55; the outline sits 56pt on screen from
+  each photo's centre, so `haloWidth` 6.5 beyond a 45.3 photo). Edge: `edge` 0.1, about 3.4pt.
+  Put through the video's own blur, our render and the reference measure and look the same at 7pt
+  `edge` 0.2, but on a sharp screen a 7pt fade next to sharp photos read as haze to the user
+  (twice), because in the video everything is equally soft. So edges are kept crisper than the
+  video measures. A thin pale margin around each photo, scallops between neighbours, flat inside,
+  no lighting. Lilac #EDDDFA, the reference's flat interior. Don't retune by eye; re-measure, and
+  compare at device resolution, not only through the video blur. One pale tint per crew (lilac,
+  butter, sky), blending where they meet.
 - Photos: big, candid, warm (Unsplash). The reference's edge is a mask, not a blur: the photo stays
-  sharp and a feathered circular mask (from 77% of the radius, measured) turns its rim translucent, so the liquid shows
-  through the edge. No blurred copy, no spill, nothing outside the circle (a blurred rim read as a
+  sharp and a feathered circular mask (from 84% of the radius: 41 to 49pt on screen) turns its rim
+  translucent, so the liquid shows through the edge. A longer fade read as haze. No blurred copy, no spill, nothing outside the circle (a blurred rim read as a
   drop shadow, the user's biggest complaint). No borders, no shadows, no dark vignette.
 - Motion: the user now wants the reference's bounce (overshoot on arrivals and on the bloom),
   smooth elsewhere. Earlier "no bouncy springs" is superseded; still no jittery or rubbery idle.
@@ -62,7 +64,7 @@ edges, but wanted an original story, which is the current one.
 3. `.circle` "Your circle grows": three friends bud out of each of you; each bud's neck stretches
    into a thread instead of snapping, making one connected liquid network.
 4. `.world` "Your world, in orbit": everything drains into one drop (keyframe 1), which blooms into
-   the reference's ring: nine photos (radius 44, at the reference's measured angles and distances,
+   the reference's ring: nine photos (radius 45.3, at the reference's measured angles and distances,
    about 117 from the centre, overlapping a little), empty
    middle, slowly turning (keyframe 2). Earth is out of this scene for now (its dark NASA rim); the pastel globe can
    return to the middle later.

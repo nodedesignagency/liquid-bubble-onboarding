@@ -43,8 +43,9 @@ struct EarthFace: View {
 /// animation only ever moves a flat image.
 enum SoftPhoto {
     /// Where the feather starts, as a fraction of the radius. It reaches zero at the edge.
-    /// Measured on the reference: opaque to 36pt, clear at 48pt from the centre.
-    static let feather: CGFloat = 0.77
+    /// On a 49pt photo it fades from 41pt to 49pt: a short, clean fade. The reference's measured
+    /// 11pt fade looked like haze around sharp photos on device.
+    static let feather: CGFloat = 0.84
 
     /// `diameter` is in points; the image is rendered at 3x.
     static func render(_ source: UIImage, diameter: CGFloat) -> UIImage {
