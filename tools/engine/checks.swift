@@ -51,7 +51,7 @@ for scene in scenes {
 for scene in [OrbitScene.you, .bump, .circle, .world] {
     let player = Player(); player.play(scene, at: 0); _ = player.frame(2); player.engine.reduceMotion = true
     let s = player.frame(9).filter { $0.radius >= 1 }
-    let pad = { (r: CGFloat) in min(r, min(14, max(6, r * 0.24))) }
+    let pad = OrbitChoreography.haloWidth
     var fused: [String] = []
     for i in s.indices { for j in s.indices where j > i {
         let gap = hypot(s[i].center.x - s[j].center.x, s[i].center.y - s[j].center.y) - s[i].radius - pad(s[i].radius) - s[j].radius - pad(s[j].radius)
@@ -86,7 +86,7 @@ print("largest per-frame move of a visible bubble at 120 Hz: \(String(format: "%
 check(maxJump < 12, "something moves too fast to read as smooth")
 
 // 3. Budding on page 3: when does your first friend's neck let go of you, versus when its thread is strong
-//    enough to survive the blur (about 0.8)? The thread should be there by the time the neck would break.
+//    enough to show (about 0.8)? The thread should be there by the time the neck would break.
 let p3 = Player()
 p3.play(.you, at: 0); _ = p3.frame(3)
 p3.play(.circle, at: 3)
@@ -94,7 +94,7 @@ var released: Double?, threadReady: Double?
 for step in 0...300 {
     let t = 3 + Double(step) / 100
     let s = p3.frame(t)
-    let pad = { (r: CGFloat) in min(r, min(14, max(6, r * 0.24))) }
+    let pad = OrbitChoreography.haloWidth
     let a = s[1], b = s[3]
     if b.radius > 1, released == nil {
         let gap = hypot(a.center.x - b.center.x, a.center.y - b.center.y) - (a.radius + pad(a.radius)) - (b.radius + pad(b.radius))
@@ -102,7 +102,11 @@ for step in 0...300 {
     }
     if threadReady == nil, let th = p3.engine.threads(at: t).first(where: { $0.a == 1 && $0.b == 3 }), th.strength > 0.8 { threadReady = t - 3 }
 }
-print(String(format: "bud 3: neck would let go at %.2f s, thread reaches 0.8 at %.2f s", released ?? -1, threadReady ?? -1))
-check((threadReady ?? 99) <= (released ?? 0) + 0.1, "thread forms too late, the neck snaps first")
+if let released {
+    print(String(format: "bud 3: neck would let go at %.2f s, thread reaches 0.8 at %.2f s", released, threadReady ?? -1))
+    check((threadReady ?? 99) <= released + 0.1, "thread forms too late, the neck snaps first")
+} else {
+    print("bud 3 stays fused to you (packed like the reference), so its thread timing doesn't matter")
+}
 print(failures == 0 ? "ALL CHECKS PASSED" : "\(failures) FAILURES")
 if failures > 0 { exit(1) }

@@ -28,16 +28,25 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
   lavender liquid. The bubbles are the only color on screen.
 - Top: back chevron and "Skip" in a slim row, then a centered title (30pt semibold) and one-line
   gray subtitle. Bottom: small page dots and one ink pill button ("Continue", then "Get started").
-- Liquid: solid band around each photo with only a hairline soft edge, lit like a gel (lighter top
-  left, deeper bottom right), outlines that slowly undulate, liquid threads between friends.
-- Photos: big, candid, warm (Unsplash). They dissolve into the liquid: sharp middle, blurred rim
-  washed with the liquid color. No borders, no shadows, no dark vignette.
-- Motion: smooth, near-critically-damped springs. Only collisions get a soft wobble.
+- Liquid: the reference's effect, measured from the user's video and reproduced: a pale
+  translucent wash about 18pt beyond each photo with a wide soft feather, flat inside, no
+  lighting, no hard edge, bridging to neighbours that come close. Photos are big and packed
+  tight (nearly touching in a ring, overlapping in a trio), so the liquid reads as a thin halo
+  around a group, never as a body of liquid with small photos floating in it. One pale tint per
+  crew (lilac, butter, sky), blending where they meet.
+- Photos: big, candid, warm (Unsplash). They dissolve into the liquid: sharp middle, then blurred,
+  lightened and washed ever more with the liquid color until the rim is pure liquid, feathered out.
+  Nothing dark may reach a photo's edge: a dark blurred rim reads as a drop shadow (the user's
+  biggest complaint). No borders, no shadows, no dark vignette.
+- Motion: the user now wants the reference's bounce (overshoot on arrivals and on the bloom),
+  smooth elsewhere. Earlier "no bouncy springs" is superseded; still no jittery or rubbery idle.
 
 Tried and rejected; don't bring these back: emoji avatars, studio headshots, dark mode, aurora or
 mesh-gradient backgrounds, glass chips, story-style progress bars, heavy headlines with an accent
 colored word, a round arrow CTA with a progress ring, a bottom-left paragraph, halos or vignettes
-that read as drop shadows, bouncy springs, and copying the reference video's layouts one to one.
+that read as drop shadows, gel or glass lighting on the liquid (tried in a mock, read as a drop
+shadow), spread-out layouts with small photos in a big body of liquid, and copying the reference
+video's layouts one to one.
 
 The user's original reference was an Apple Photos-style "Memories" screen: clusters of photo
 bubbles in soft pastel liquid with blurred photo edges. They love its liquid quality and blurred
@@ -64,9 +73,11 @@ edges, but wanted an original story, which is the current one.
 - `Orbit/Bubbles/OrbitChoreography.swift`: the layouts per scene, as keyframes, in a 372 x 480
   reference space centered on the stage. Bubble 0 is Earth, 1 you, 2 the friend you bump, 3-5
   your friends, 6-8 theirs.
-- `Orbit/Bubbles/BubbleStage.swift`: the view. `GooLayer` draws the liquid in a `Canvas`; photos
-  are separate views on top, layered by size (Earth always underneath). The stage is laid out in a
-  slot between header and footer but draws full screen.
+- `Orbit/Bubbles/BubbleStage.swift`: the view. `GooLayer` draws the liquid with the `liquid` Metal
+  shader (`Orbit/Bubbles/Liquid.metal`) through `.colorEffect`: discs and capsules with soft
+  shoulders summed into one field, no threshold; the preview tool mirrors the same formula. Photos
+  are separate views on top, layered by size (Earth just above the liquid, under everyone). The
+  stage is laid out in a slot between header and footer but draws full screen.
 - `Orbit/Bubbles/SpringCurve.swift`: spring presets.
 - `Orbit/Components/BubbleFaces.swift`: `SoftPhoto` renders each photo's dissolving edge once with
   Core Image; `AvatarFace`, `EarthFace`.
@@ -76,11 +87,12 @@ edges, but wanted an original story, which is the current one.
 
 SwiftUI gotchas learned on device:
 
-- In a `Canvas`, put the blur and the `alphaThreshold` filters on separate nested layers (blur on
-  the inner one). With both on one context they run in the wrong order and bubbles only glow.
-- SwiftUI's blur radius behaves like a Gaussian sigma. Thin liquid threads vanish under the
-  threshold if they're narrower than about 1.35x the goo blur, which is why the goo blur is 8.
+- The old Canvas approach (blur, then `alphaThreshold`) is what made the liquid harsh: a hard cut
+  edge, an opaque fill and painted-on highlights. Don't go back to it; the shader has no threshold.
 - Any view-level blur on the goo beyond ~1pt makes the rim fade out like a drop shadow.
+- The shader can't be compiled in a cloud session (no Metal toolchain). Keep `Liquid.metal` simple
+  and standard, and mirror any change in `tools/preview/render.py` (`shoulder`) so the preview stays
+  truthful.
 
 ## Verifying without Xcode
 

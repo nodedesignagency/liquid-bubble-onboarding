@@ -46,13 +46,7 @@ struct BubbleStage: View {
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 let bubbles = engine.snapshot(at: time)
                 ZStack {
-                    GooLayer(
-                        bubbles: bubbles,
-                        threads: engine.threads(at: time),
-                        time: time,
-                        metrics: metrics,
-                        alive: !reduceMotion
-                    )
+                    GooLayer(bubbles: bubbles, threads: engine.threads(at: time), metrics: metrics)
                     ForEach(bubbles) { bubble in
                         let base = faceSize(for: bubble.id)
                         face(for: bubble.id, diameter: base)
@@ -62,8 +56,8 @@ struct BubbleStage: View {
                             .opacity(bubble.radius < 0.5 ? 0 : 1)
                             // Bigger on top: a new bubble stays hidden behind its parent's photo
                             // until it buds out, and an absorbed one slips behind whoever swallows it.
-                            // Earth always sits underneath, so friends cling to its rim on top of it.
-                            .zIndex(bubble.id == OrbitChoreography.earth ? -1 : Double(bubble.radius))
+                            // Earth sits just above the liquid and under everyone, so friends cling to its rim.
+                            .zIndex(bubble.id == OrbitChoreography.earth ? 0.5 : Double(bubble.radius))
                     }
                     ForEach(engine.labels(at: time)) { rendered in
                         if let point = labelPoint(for: rendered.label, bubbles: bubbles, metrics: metrics) {
@@ -157,131 +151,55 @@ struct BubbleStage: View {
     }
 }
 
-/// The liquid behind the photos. Blur the circles together, then cut the blur back with an alpha
-/// threshold: wherever two blurs overlap they fuse into one blob, and a bubble leaving its parent
-/// pulls a neck of liquid with it. Then it's lit like a gel: lighter top left, deeper bottom right.
+/// The liquid behind the photos: a pale wash around each one with a wide, soft edge, bridging
+/// to its neighbours where they come close, like the reference. Drawn by the `liquid` Metal
+/// shader (see `Liquid.metal`) over the whole stage, so there is no blur pass and no threshold:
+/// the edge is as soft as it is, at any size, and the colour inside is flat.
 private struct GooLayer: View {
     var bubbles: [RenderedBubble]
     var threads: [RenderedThread]
-    var time: Double
     var metrics: StageMetrics
-    /// Slowly undulating outlines. Off for Reduce Motion.
-    var alive: Bool
+
+    /// Width of the soft shoulder at each edge, in reference points.
+    static let softness: CGFloat = 7
+    /// Lets two overlapping shoulders reach full strength while a lone edge stays soft.
+    static let gain: Float = 1.3
 
     var body: some View {
-        Canvas { context, size in
-            let scale = metrics.scale
-            context.drawLayer { tinted in
-                // One filter per layer, so the blur is guaranteed to happen before the threshold.
-                // (With both filters on one context the circles just glow instead of fusing.)
-                tinted.drawLayer { cut in
-                    cut.addFilter(.alphaThreshold(min: 0.5, color: .white))
-                    cut.drawLayer { soft in
-                        soft.addFilter(.blur(radius: 8 * scale))
-                        soft.drawLayer { shapes in
-                            for bubble in bubbles where bubble.radius > 0.5 {
-                                drawBlob(for: bubble, into: &shapes, scale: scale)
-                            }
-                            for thread in threads {
-                                drawThread(thread, into: &shapes, scale: scale)
-                            }
-                        }
-                    }
-                }
-
-                // Fill the liquid, lit from the top...
-                tinted.blendMode = .sourceIn
-                tinted.fill(
-                    Path(CGRect(origin: .zero, size: size)),
-                    with: .linearGradient(
-                        Gradient(colors: [Theme.liquidLight, Theme.liquid, Theme.liquidDeep]),
-                        startPoint: CGPoint(x: size.width * 0.3, y: 0),
-                        endPoint: CGPoint(x: size.width * 0.7, y: size.height)
-                    )
-                )
-                tinted.blendMode = .sourceAtop
-                for bubble in bubbles where bubble.radius > 4 {
-                    let center = metrics.point(bubble.center)
-                    let reach = haloRadius(bubble.radius) * scale
-                    // ...each crew glowing in its own tint...
-                    if bubble.tint != .liquid {
-                        glow(&tinted, at: center, radius: reach * 1.7, color: bubble.tint.color, from: 0.35)
-                    }
-                    // ...with a soft highlight on the upper left of each blob and depth on the lower right.
-                    glow(&tinted, at: CGPoint(x: center.x - reach * 0.35, y: center.y - reach * 0.42),
-                         radius: reach, color: .white.opacity(0.6))
-                    glow(&tinted, at: CGPoint(x: center.x + reach * 0.38, y: center.y + reach * 0.45),
-                         radius: reach, color: Theme.liquidShade.opacity(0.55))
-                }
-            }
-        }
-        // Just enough to soften the threshold's stair-stepped edge. Any more and the rim fades
-        // out like a drop shadow instead of reading as solid liquid.
-        .blur(radius: 1.2)
-    }
-
-    /// The bubble's rim of liquid, plus three small satellites circling just inside it so the
-    /// outline slowly undulates like a lava lamp instead of sitting there as a perfect circle.
-    private func drawBlob(for bubble: RenderedBubble, into shapes: inout GraphicsContext, scale: CGFloat) {
-        let center = metrics.point(bubble.center)
-        let halo = haloRadius(bubble.radius)
-        fillCircle(&shapes, center: center, radius: halo * scale)
-        guard alive, bubble.radius > 12 else { return }
-        let satellite = bubble.radius * 0.32
-        let orbit = halo + bubble.radius * 0.045 - satellite
-        for k in 0..<3 {
-            let direction: Double = k.isMultiple(of: 2) ? 1 : -1
-            let angle = time * (0.35 + 0.12 * Double(k)) * direction + Double(bubble.id) * 1.9 + Double(k) * 2.1
-            let p = CGPoint(x: bubble.center.x + orbit * CGFloat(cos(angle)), y: bubble.center.y + orbit * CGFloat(sin(angle)))
-            fillCircle(&shapes, center: metrics.point(p), radius: satellite * scale)
+        let shapes = shapes
+        if shapes.isEmpty {
+            Color.clear
+        } else {
+            Rectangle()
+                .fill(.white)
+                .colorEffect(ShaderLibrary.liquid(
+                    .float(Float(Self.softness * metrics.scale)),
+                    .float(Self.gain),
+                    .floatArray(shapes)
+                ))
         }
     }
 
-    /// A string of liquid between two bubbles: a chain of overlapping dots that the blur fuses
-    /// into one strand, thinnest in the middle so it snaps there first as it lets go.
-    private func drawThread(_ thread: RenderedThread, into shapes: inout GraphicsContext, scale: CGFloat) {
-        guard bubbles.indices.contains(thread.a), bubbles.indices.contains(thread.b) else { return }
-        let a = bubbles[thread.a], b = bubbles[thread.b]
-        guard a.radius > 1, b.radius > 1 else { return }
-        let dx = b.center.x - a.center.x, dy = b.center.y - a.center.y
-        let length = (dx * dx + dy * dy).squareRoot()
-        guard length > 1 else { return }
-        // Start and end a little inside each bubble so the strand fuses into both.
-        let start = a.radius * 0.7 / length, end = 1 - b.radius * 0.7 / length
-        guard end > start else { return }
-        let steps = max(2, Int((end - start) * length / 4))
-        for i in 0...steps {
-            let u = start + (end - start) * CGFloat(i) / CGFloat(steps)
-            let middle = abs(2 * (CGFloat(i) / CGFloat(steps)) - 1)
-            let radius = 7.5 * thread.strength * (0.75 + 0.25 * middle * middle)
-            let p = CGPoint(x: a.center.x + dx * u, y: a.center.y + dy * u)
-            fillCircle(&shapes, center: metrics.point(p), radius: radius * scale)
+    /// Nine floats per shape, as `Liquid.metal` reads them: kind, x1, y1, x2, y2, radius, r, g, b.
+    private var shapes: [Float] {
+        var out: [Float] = []
+        out.reserveCapacity((bubbles.count + threads.count) * 9)
+        for bubble in bubbles where bubble.radius > 0.5 {
+            let c = metrics.point(bubble.center)
+            let radius = (bubble.radius + OrbitChoreography.haloWidth(bubble.radius)) * metrics.scale
+            out += [0, Float(c.x), Float(c.y), 0, 0, Float(radius),
+                    Float(bubble.tint.red), Float(bubble.tint.green), Float(bubble.tint.blue)]
         }
-    }
-
-    private func fillCircle(_ context: inout GraphicsContext, center: CGPoint, radius: CGFloat) {
-        context.fill(
-            Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)),
-            with: .color(.white)
-        )
-    }
-
-    private func glow(_ context: inout GraphicsContext, at center: CGPoint, radius: CGFloat, color: Color, from: CGFloat = 0) {
-        context.fill(
-            Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)),
-            with: .radialGradient(
-                Gradient(colors: [color, color.opacity(0)]),
-                center: center,
-                startRadius: radius * from,
-                endRadius: radius
-            )
-        )
-    }
-
-    /// The rim of liquid around a photo: about a quarter of its radius, capped so big bubbles
-    /// aren't chunky, and tapering to nothing for tiny bubbles so they grow out smoothly.
-    private func haloRadius(_ radius: CGFloat) -> CGFloat {
-        radius + min(radius, min(14, max(6, radius * 0.24)))
+        for thread in threads {
+            guard bubbles.indices.contains(thread.a), bubbles.indices.contains(thread.b) else { continue }
+            let a = bubbles[thread.a], b = bubbles[thread.b]
+            guard a.radius > 1, b.radius > 1 else { continue }
+            let pa = metrics.point(a.center), pb = metrics.point(b.center)
+            let tint = GooTint.mix(a.tint, b.tint, 0.5)
+            out += [1, Float(pa.x), Float(pa.y), Float(pb.x), Float(pb.y), Float(8 * thread.strength * metrics.scale),
+                    Float(tint.red), Float(tint.green), Float(tint.blue)]
+        }
+        return out
     }
 }
 

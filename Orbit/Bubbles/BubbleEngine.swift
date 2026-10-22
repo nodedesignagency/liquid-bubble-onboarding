@@ -2,8 +2,8 @@ import SwiftUI
 
 // MARK: - Layout types
 
-/// Tint of the liquid around a bubble, kept as raw components so it can be interpolated.
-/// `.liquid` means "no tint of its own": the stage-wide gradient shows through.
+/// Colour of the liquid around a bubble, as it reads on the canvas. Kept as raw components so
+/// it can be interpolated, and so crews with different tints blend where their liquid meets.
 struct GooTint: Equatable {
     var red, green, blue: Double
 
@@ -19,7 +19,11 @@ struct GooTint: Equatable {
         self.blue = blue
     }
 
-    static let liquid = GooTint(hex: 0xDCD3F7)
+    /// Pale lilac, the default. Mirrors `Theme.liquid`.
+    static let liquid = GooTint(hex: 0xEADDF1)
+    /// Mirrors `Theme.butter` and `Theme.sky`.
+    static let butter = GooTint(hex: 0xF4E9CA)
+    static let sky = GooTint(hex: 0xDCE6F3)
 
     var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: 1) }
 

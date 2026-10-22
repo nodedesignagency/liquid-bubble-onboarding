@@ -13,9 +13,9 @@ liquid bubbles:
 
 ![Onboarding steps](docs/onboarding-steps.jpg)
 
-[`docs/onboarding-preview.mp4`](docs/onboarding-preview.mp4) is a motion preview rendered from the
-real animation engine's output. It uses Nunito as a stand-in for SF Pro Rounded and approximates
-SwiftUI's blur, so expect small differences from the simulator.
+`tools/preview/run.sh` renders a motion preview video from the real animation engine's output (see
+below). It uses Nunito as a stand-in for SF Pro Rounded, so expect small differences from the
+simulator.
 
 ## Run it
 
@@ -31,22 +31,25 @@ launch, and "Replay onboarding" on the last screen starts it again.
 
 ## How the liquid works
 
-- **Goo** (`Bubbles/BubbleStage.swift`, `GooLayer`): every bubble draws a slightly larger circle
-  into a `Canvas` layer that is blurred, then cut back with `alphaThreshold`. Where two blurs
-  overlap they fuse, which is the liquid neck you see when bubbles meet or bud. Each filter sits on
-  its own nested layer: with both on one context, SwiftUI applies them in an order that makes the
-  circles glow instead of fusing. Three small satellites circle inside each blob so its outline
-  keeps moving, threads are chains of dots that fuse into a strand (thinnest in the middle, so
-  that's where they snap), and the liquid is lit like a gel: lighter top left, deeper bottom right.
+- **Goo** (`Bubbles/Liquid.metal`, used by `GooLayer` in `Bubbles/BubbleStage.swift`): a per-pixel
+  Metal shader, applied with `.colorEffect` over the whole stage. Every photo is a disc and every
+  thread a capsule, each with the soft shoulder a Gaussian blur would give it, summed into one
+  field. Where two come close the shoulders add up and bridge, so neighbours share one lobed
+  outline and a budding bubble drags a neck of liquid behind it. There is no threshold and no
+  lighting: the edge is the shoulder itself, and inside, the colour is a flat pale wash. Each
+  bubble carries its own tint, and tints blend where their liquid meets.
 - **Photos** (`Components/BubbleFaces.swift`, `SoftPhoto`): rendered once each with Core Image: a
-  sharp middle dissolving into a blurred rim washed with the liquid's color. No borders or shadows.
+  sharp middle that blurs and takes on the liquid's colour toward the rim, with the outermost
+  edge feathered out, so the photo melts into the liquid. No borders or shadows.
 - **Motion** (`Bubbles/BubbleEngine.swift`): each bubble is a pure function of time driven by
-  closed-form, near-critically-damped springs, so transitions flow without bouncing and
-  interrupting one never jumps. A hidden bubble rides inside its parent every frame, which is why
-  new friends bud out of a moving parent rather than out of thin air.
+  closed-form springs, so interrupting a transition never jumps. A hidden bubble rides inside
+  its parent every frame, which is why new friends bud out of a moving parent rather than out of
+  thin air.
 - **Choreography** (`Bubbles/OrbitChoreography.swift`): the layouts and threads for each page, in a
-  fixed 372 × 480 reference space that scales to the screen. A page can be several keyframes: the
-  bump collides, then separates; the last page drains into a drop, then swells into Earth.
+  fixed 372 × 480 reference space that scales to the screen. Photos are packed tight, like the
+  reference: a bud sits close enough to its parent that their liquid stays one shape. A page can
+  be several keyframes: the bump collides, then separates; the last page drains into a drop,
+  then swells into Earth.
 - The stage is laid out between the heading and the footer but draws over the whole screen, so
   bubbles pushed aside slide off the real screen edge.
 
@@ -56,7 +59,7 @@ spin. Each bud plays a soft haptic as it lets go of its parent.
 ## Make it yours
 
 - **Copy**: `Onboarding/OnboardingStep.swift` (title, subtitle and scene per page).
-- **Colors**: `Theme/Theme.swift` (the liquid's light, base, deep and shade colors).
+- **Colors**: `Theme/Theme.swift` (the liquid's lilac, butter and sky washes; mirror them in `GooTint`).
 - **Photos**: replace `friend-1` (you) … `friend-8` in `Assets.xcassets`. A missing photo falls back
   to initials.
 

@@ -24,7 +24,7 @@ struct AvatarFace: View {
 
 /// The globe everyone buds out of.
 struct EarthFace: View {
-    static let photo = UIImage(named: "earth").map { SoftPhoto.render($0, diameter: 260) }
+    static let photo = UIImage(named: "earth").map { SoftPhoto.render($0, diameter: 260, wash: UIColor(Theme.liquid)) }
 
     let diameter: CGFloat
 
@@ -37,16 +37,15 @@ struct EarthFace: View {
     }
 }
 
-/// No border and no shadow: the middle of the photo stays sharp, the outer rim goes soft and
-/// blurry and takes on the liquid's color, and the very edge fades out so the photo melts into
-/// the liquid around it. Rendered once per photo, so the animation only ever moves a flat image.
+/// No border and no shadow: the middle of the photo stays sharp, then it blurs, lightens and takes
+/// on more and more of the liquid's colour toward the rim, until the outermost edge is the liquid
+/// itself and feathers out. Nothing dark ever reaches the edge, so there is no ring that could read
+/// as a shadow. Rendered once per photo, so the animation only ever moves a flat image.
 enum SoftPhoto {
     private static let ciContext = CIContext()
-    /// `Theme.liquid`.
-    private static let liquid = UIColor(red: 0xDC / 255, green: 0xD3 / 255, blue: 0xF7 / 255, alpha: 1)
 
-    /// `diameter` is in points; the image is rendered at 3x.
-    static func render(_ source: UIImage, diameter: CGFloat) -> UIImage {
+    /// `diameter` is in points; the image is rendered at 3x. `wash` is the liquid the rim melts into.
+    static func render(_ source: UIImage, diameter: CGFloat, wash: UIColor) -> UIImage {
         let size = CGSize(width: diameter, height: diameter)
         let rect = CGRect(origin: .zero, size: size)
         let format = UIGraphicsImageRendererFormat()
@@ -55,30 +54,42 @@ enum SoftPhoto {
 
         let square = UIGraphicsImageRenderer(size: size, format: format).image { _ in
             source.draw(in: aspectFill(source.size, in: rect))
-            // Fill the corners outside the circle with liquid, so the blur can't drag dark corners into the rim.
+            // Fill the corners outside the circle with liquid, so the blur pulls the liquid's
+            // colour inward instead of dark corners.
             let corners = UIBezierPath(rect: rect)
             corners.append(UIBezierPath(ovalIn: rect))
             corners.usesEvenOddFillRule = true
-            liquid.setFill()
+            wash.setFill()
             corners.fill()
         }
-        let blurred = blur(square, sigma: diameter * 0.05 * format.scale)
+        let blurred = blur(square, sigma: diameter * 0.09 * format.scale)
 
         return UIGraphicsImageRenderer(size: size, format: format).image { context in
             let cg = context.cgContext
-            // Blurry rim washed with the liquid's color, fading out at the edge...
+            // The rim: blurred and lightened, washed with the liquid's colour more and more toward the
+            // edge (all liquid from 85% of the radius out), then feathered out...
             cg.beginTransparencyLayer(auxiliaryInfo: nil)
             blurred.draw(in: rect)
-            cg.setFillColor(liquid.withAlphaComponent(0.35).cgColor)
+            cg.setFillColor(UIColor.white.withAlphaComponent(0.3).cgColor)
             cg.fill(rect)
-            fade(cg, in: rect, from: 0.72, to: 1)
+            tint(cg, in: rect, with: wash, from: 0.3, to: 0.85)
+            fade(cg, in: rect, from: 0.8, to: 1)
             cg.endTransparencyLayer()
-            // ...under a sharp middle that dissolves into it.
+            // ...under the sharp middle, which dissolves into it.
             cg.beginTransparencyLayer(auxiliaryInfo: nil)
             square.draw(in: rect)
-            fade(cg, in: rect, from: 0.5, to: 0.82)
+            fade(cg, in: rect, from: 0.5, to: 0.86)
             cg.endTransparencyLayer()
         }
+    }
+
+    /// Paints `color` over what's drawn, from nothing at `from` (a fraction of the radius) to fully at `to` and beyond.
+    private static func tint(_ cg: CGContext, in rect: CGRect, with color: UIColor, from: CGFloat, to: CGFloat) {
+        let colors = [color.withAlphaComponent(0).cgColor, color.cgColor] as CFArray
+        guard let gradient = CGGradient(colorsSpace: nil, colors: colors, locations: [from, to]) else { return }
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        cg.drawRadialGradient(gradient, startCenter: center, startRadius: 0, endCenter: center,
+                              endRadius: rect.width / 2, options: [.drawsAfterEndLocation])
     }
 
     /// Keeps what's already drawn inside `from` (a fraction of the radius) and fades it out to nothing at `to`.

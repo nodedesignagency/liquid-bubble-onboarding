@@ -1,6 +1,6 @@
 # Motion preview of the onboarding, driven by the Swift engine's recorded bubbles and threads.
 # Keep `steps` (copy and timings) in sync with Onboarding/OnboardingStep.swift and tools/engine/record.swift.
-# Mirrors GooLayer (blur -> threshold -> lit fill), SoftPhoto, and the onboarding chrome.
+# Mirrors GooLayer (the `liquid` shader: soft discs and capsules summed, no threshold), SoftPhoto, and the chrome.
 # Nunito stands in for SF Pro Rounded. iPhone 17 Pro sized (402 x 874 pt).
 import csv, sys, os, math
 from collections import defaultdict
@@ -12,7 +12,8 @@ ONLY = [int(x) for x in os.environ.get("FRAMES", "").split(",") if x]
 os.makedirs(out_dir, exist_ok=True)
 S, W, H, FPS = 2, 402, 874, 30
 BG = np.array([0xFA, 0xFA, 0xFA], float)
-LIGHT, LIQ, DEEP, SHADE = [np.array(c, float) for c in ([0xE8, 0xE2, 0xFB], [0xDC, 0xD3, 0xF7], [0xD0, 0xC4, 0xF2], [0xB9, 0xA9, 0xEC])]
+LIQ = np.array([0xEA, 0xDD, 0xF1], float)   # Theme.liquid, the wash the photo rims melt into
+SOFT, GAIN = 7.0, 1.3                      # GooLayer.softness (reference pt) and gain
 INK, INK2, HAIR = (0x1D, 0x1D, 0x1F), (0x86, 0x86, 0x8B), (0xDB, 0xDB, 0xDC)
 SLOT = (194, 748)
 scale = min(W / 372, (SLOT[1] - SLOT[0]) / 480, 1.3)
@@ -32,16 +33,19 @@ def radial_alpha(n, a, b):
     return np.clip((b - np.hypot(xx, yy) * 2) / (b - a), 0, 1)
 
 def soft_photo(im):
-    """Mirror of SoftPhoto: corners filled with liquid, blurred rim washed with liquid, sharp middle."""
+    """Mirror of SoftPhoto: corners filled with the wash; rim blurred, lightened and washed ever more
+    toward the edge (all liquid from 85% of the radius out); sharp middle dissolving into it."""
     n = im.width
     yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n - 0.5
     outside = (np.hypot(xx, yy) * 2 > 1)[..., None]
     sharp = np.where(outside, LIQ, np.asarray(im, float))
-    blurred = np.asarray(Image.fromarray(sharp.astype("uint8")).filter(ImageFilter.GaussianBlur(n * 0.05)), float)
-    blurred = blurred * 0.65 + LIQ * 0.35
-    a1 = radial_alpha(n, 0.72, 1.0)[..., None]; a2 = radial_alpha(n, 0.5, 0.82)[..., None]
-    rgb = sharp * a2 + blurred * (1 - a2)
-    alpha = a2 + a1 * (1 - a2)
+    blurred = np.asarray(Image.fromarray(sharp.astype("uint8")).filter(ImageFilter.GaussianBlur(n * 0.09)), float)
+    blurred = blurred + (255 - blurred) * 0.3
+    wash = 1 - radial_alpha(n, 0.3, 0.85)[..., None]
+    rim = blurred * (1 - wash) + LIQ * wash
+    a_rim = radial_alpha(n, 0.8, 1.0)[..., None]; a_sharp = radial_alpha(n, 0.5, 0.86)[..., None]
+    rgb = sharp * a_sharp + rim * (1 - a_sharp)
+    alpha = a_sharp + a_rim * (1 - a_sharp)
     return Image.fromarray(np.dstack([rgb, alpha * 255]).astype("uint8"), "RGBA")
 
 FACE = 320
@@ -53,29 +57,24 @@ for i in range(0, 9):
 rows = defaultdict(list)
 with open(frames_csv) as fh:
     for r in csv.DictReader(fh):
-        rows[int(r["frame"])].append((int(r["id"]), float(r["x"]), float(r["y"]), float(r["r"])))
+        tint = np.array([float(r["tr"]), float(r["tg"]), float(r["tb"])]) * 255
+        rows[int(r["frame"])].append((int(r["id"]), float(r["x"]), float(r["y"]), float(r["r"]), tint))
 threads = defaultdict(list)
 with open(threads_csv) as fh:
     for r in csv.DictReader(fh):
         threads[int(r["frame"])].append((int(r["a"]), int(r["b"]), float(r["strength"])))
 
 def ease(x): x = min(max(x, 0), 1); return x * x * (3 - 2 * x)
-def halo(r): return r + min(r, min(14, max(6, r * 0.24)))
-def pt(x, y): return ((ox + x * scale) * S, (oy + y * scale) * S)
+def halo(r): return min(18, 3 + r * 0.36)   # OrbitChoreography.haloWidth
+def pt(x, y): return (ox + x * scale, oy + y * scale)   # reference space -> screen points
 
 gy, gx = np.mgrid[0:H * S, 0:W * S].astype(float)
-# Linear gradient from (0.3w, 0) to (0.7w, h), like the Canvas fill.
-vx, vy = 0.4 * W * S, H * S
-proj = np.clip(((gx - 0.3 * W * S) * vx + gy * vy) / (vx * vx + vy * vy), 0, 1)[..., None]
-fill = np.where(proj < 0.5, LIGHT + (LIQ - LIGHT) * proj / 0.5, LIQ + (DEEP - LIQ) * (proj - 0.5) / 0.5)
+PX, PY = (gx + 0.5) / S, (gy + 0.5) / S     # every pixel's position in points, like the shader's
 base = np.broadcast_to(BG, (H * S, W * S, 3))
 
-def glow(tint, cx, cy, rad, color, peak):
-    x0, x1 = int(max(cx - rad, 0)), int(min(cx + rad, W * S)); y0, y1 = int(max(cy - rad, 0)), int(min(cy + rad, H * S))
-    if x1 <= x0 or y1 <= y0: return
-    sy, sx = np.mgrid[y0:y1, x0:x1]
-    a = (np.clip(1 - np.hypot(sx - cx, sy - cy) / rad, 0, 1) * peak)[..., None]
-    tint[y0:y1, x0:x1] = color * a + tint[y0:y1, x0:x1] * (1 - a)
+def shoulder(d, radius):
+    """Alpha of a disc of `radius` with a Gaussian-like soft edge, at distance d. Same formula as Liquid.metal."""
+    return 1 / (1 + np.exp(np.clip(1.702 * (d - radius) / (SOFT * scale), -30, 30)))
 
 def wrap(draw, text, font, maxw):
     words, lines, line = text.split(), [], ""
@@ -98,44 +97,33 @@ for fi in sorted(rows):
     if ONLY and fi not in ONLY: continue
     t = fi / FPS
     bubbles = {b[0]: b for b in rows[fi]}
-    mask = Image.new("L", (W * S, H * S), 0); md = ImageDraw.Draw(mask)
-    def dot(x, y, r):
-        cx, cy = pt(x, y); R = r * scale * S
-        md.ellipse([cx - R, cy - R, cx + R, cy + R], fill=255)
-    for i, x, y, r in bubbles.values():
+
+    # The liquid: one field of soft discs (photos) and capsules (threads), tinted by whoever contributes.
+    field = np.zeros((H * S, W * S)); tint = np.zeros((H * S, W * S, 3))
+    def add(w, color):
+        global field, tint
+        field = field + w; tint = tint + w[..., None] * color
+    for i, x, y, r, color in bubbles.values():
         if r <= 0.5: continue
-        hr = halo(r); dot(x, y, hr)
-        if r > 12:
-            sat = r * 0.32; orb = hr + r * 0.045 - sat
-            for k in range(3):
-                d = 1 if k % 2 == 0 else -1
-                ang = t * (0.35 + 0.12 * k) * d + i * 1.9 + k * 2.1
-                dot(x + orb * math.cos(ang), y + orb * math.sin(ang), sat)
-    for a, b, s in threads.get(fi, []):
+        cx, cy = pt(x, y)
+        add(shoulder(np.hypot(PX - cx, PY - cy), (r + halo(r)) * scale), color)
+    for a, b, s_ in threads.get(fi, []):
         A, B = bubbles[a], bubbles[b]
         if A[3] <= 1 or B[3] <= 1: continue
-        dx, dy = B[1] - A[1], B[2] - A[2]; L = math.hypot(dx, dy)
-        if L <= 1: continue
-        st, en = A[3] * 0.7 / L, 1 - B[3] * 0.7 / L
-        if en <= st: continue
-        n = max(2, int((en - st) * L / 4))
-        for k in range(n + 1):
-            u = st + (en - st) * k / n; mid = abs(2 * k / n - 1)
-            dot(A[1] + dx * u, A[2] + dy * u, 7.5 * min(s, 1.2) * (0.75 + 0.25 * mid * mid))
-    goo = (np.asarray(mask.filter(ImageFilter.GaussianBlur(8 * scale * S))) >= 128).astype(float)[..., None]
-    tint = fill.copy()
-    for i, x, y, r in bubbles.values():
-        if r <= 4: continue
-        cx, cy = pt(x, y); R = halo(r) * scale * S
-        glow(tint, cx - R * 0.35, cy - R * 0.42, R, np.array([255.0, 255, 255]), 0.6)
-        glow(tint, cx + R * 0.38, cy + R * 0.45, R, SHADE, 0.55)
-    prem = np.asarray(Image.fromarray((tint * goo).astype("uint8")).filter(ImageFilter.GaussianBlur(1.2 * S)), float)
-    A_ = np.asarray(Image.fromarray((goo[..., 0] * 255).astype("uint8")).filter(ImageFilter.GaussianBlur(1.2 * S)), float)[..., None] / 255
-    frame = Image.fromarray((prem + base * (1 - A_)).astype("uint8")).convert("RGBA")
+        (ax, ay), (bx, by) = pt(A[1], A[2]), pt(B[1], B[2])
+        vx, vy = bx - ax, by - ay
+        u = np.clip(((PX - ax) * vx + (PY - ay) * vy) / max(vx * vx + vy * vy, 1e-4), 0, 1)
+        radius = 8 * min(s_, 1.2) * scale * (0.75 + 0.25 * np.abs(2 * u - 1))
+        add(shoulder(np.hypot(PX - (ax + u * vx), PY - (ay + u * vy)), radius), (A[4] + B[4]) / 2)
+    alpha = np.clip(field * GAIN, 0, 1)[..., None]
+    color = tint / np.maximum(field, 1e-9)[..., None]
+    frame = Image.fromarray((color * alpha + base * (1 - alpha)).astype("uint8")).convert("RGBA")
+
+    # Photos: Earth just above the liquid, then everyone else, bigger on top.
     order = sorted(bubbles.values(), key=lambda b: -1 if b[0] == 0 else b[3])
-    for i, x, y, r in order:
+    for i, x, y, r, _ in order:
         if r <= 0.5: continue
-        dpx = max(1, int(round(2 * r * scale * S))); cx, cy = pt(x, y)
+        dpx = max(1, int(round(2 * r * scale * S))); cx, cy = pt(x, y); cx, cy = cx * S, cy * S
         if -dpx < cx < W * S + dpx and -dpx < cy < H * S + dpx:
             frame.alpha_composite(faces[i].resize((dpx, dpx), Image.LANCZOS), (int(cx - dpx / 2), int(cy - dpx / 2)))
 

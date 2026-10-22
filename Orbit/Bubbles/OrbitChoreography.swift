@@ -69,16 +69,17 @@ enum OrbitChoreography {
     }
 
     private static var circle: BubbleLayout {
-        let youCenter = CGPoint(x: -30, y: -60)
-        let friendCenter = CGPoint(x: 60, y: 80)
+        let youCenter = CGPoint(x: -34, y: -66)
+        let friendCenter = CGPoint(x: 62, y: 72)
         // (parent, angle around the parent in degrees with 0 right and clockwise, distance, radius, bud delay)
+        // Packed like the reference: each bud sits close enough that its liquid merges with its parent's.
         let buds: [(Int, Double, CGFloat, CGFloat, Double)] = [
-            (you, -110, 128, 34, 0.5),
-            (you, -160, 118, 30, 0.7),
-            (you, -40, 124, 30, 0.9),
-            (friend, 30, 104, 26, 0.6),
-            (friend, 80, 112, 32, 0.8),
-            (friend, 140, 110, 28, 1.0),
+            (you, -112, 104, 42, 0.5),
+            (you, -168, 102, 40, 0.7),
+            (you, -42, 106, 40, 0.9),
+            (friend, 24, 94, 38, 0.6),
+            (friend, 78, 96, 40, 0.8),
+            (friend, 138, 94, 38, 1.0),
         ]
 
         var targets = tucked()
@@ -110,13 +111,13 @@ enum OrbitChoreography {
 
     /// The drop swells into Earth and your people bud back out, clinging to its rim like droplets.
     private static var world: BubbleLayout {
-        let rim: [(Double, CGFloat)] = [(-100, 30), (-55, 26), (-10, 28), (35, 24), (80, 30), (125, 26), (170, 28), (215, 24)]
+        let rim: [(Double, CGFloat)] = [(-100, 38), (-55, 34), (-10, 36), (35, 32), (80, 38), (125, 34), (170, 36), (215, 32)]
         var targets = tucked()
         targets[earth] = BubbleTarget(radius: 92, appearDelay: 0, moveDelay: 0)
         for (i, spot) in rim.enumerated() {
-            // Sitting a little over Earth's edge, so each one stays fused to it.
+            // Half over Earth's edge, close enough to the next one that the ring reads as one liquid.
             targets[1 + i] = BubbleTarget(
-                center: polar(92 + spot.1 * 0.62, spot.0),
+                center: polar(92 + spot.1 * 0.5, spot.0),
                 radius: spot.1,
                 appearDelay: 0.25 + 0.07 * Double(i)
             )
@@ -133,6 +134,12 @@ enum OrbitChoreography {
     }
 
     // MARK: Helpers
+
+    /// The band of pale liquid around a photo, in reference points: about 18 on a big photo,
+    /// tapering away for tiny ones so they grow out of their parent smoothly.
+    static func haloWidth(_ radius: CGFloat) -> CGFloat {
+        min(18, 3 + radius * 0.36)
+    }
 
     /// Each bubble tucked inside the one it grows out of: your friends inside you, your friend's inside them.
     private static func tucked() -> [BubbleTarget] {
