@@ -50,7 +50,7 @@ struct BubbleStage: View {
                     ForEach(bubbles) { bubble in
                         let base = faceSize(for: bubble.id)
                         face(for: bubble.id, diameter: base)
-                            .frame(width: base, height: base)
+                            .frame(width: base * SoftPhoto.reach, height: base * SoftPhoto.reach)
                             .scaleEffect(max(bubble.radius * 2 * metrics.scale / base, 0.001))
                             .position(metrics.point(bubble.center))
                             .opacity(bubble.radius < 0.5 ? 0 : 1)
@@ -151,19 +151,20 @@ struct BubbleStage: View {
     }
 }
 
-/// The liquid behind the photos: a pale wash around each one with a wide, soft edge, bridging
-/// to its neighbours where they come close, like the reference. Drawn by the `liquid` Metal
-/// shader (see `Liquid.metal`) over the whole stage, so there is no blur pass and no threshold:
-/// the edge is as soft as it is, at any size, and the colour inside is flat.
+/// The liquid behind the photos: a pale wash around each one, bridging to its neighbours where
+/// they come close, like the reference. Drawn by the `liquid` Metal shader (see `Liquid.metal`)
+/// over the whole stage: a blur cut by a soft threshold, computed per pixel, so there is no blur
+/// pass, the edge is as soft as it is at any size, and the colour inside is flat.
 private struct GooLayer: View {
     var bubbles: [RenderedBubble]
     var threads: [RenderedThread]
     var metrics: StageMetrics
 
-    /// Width of the soft shoulder at each edge, in reference points (the edge fades over about twice this).
-    static let softness: CGFloat = 6
-    /// Lets two overlapping shoulders reach full strength while a lone edge stays soft.
-    static let gain: Float = 1.3
+    /// The blur's shoulder, in reference points: wide, so neighbours round into each other.
+    static let softness: CGFloat = 8
+    /// Half-width of the threshold ramp, in field units. With `softness` 8 the visible edge fades
+    /// over about 8pt, measured to match the reference. A longer fade read as fog on device.
+    static let edge: Float = 0.2
 
     var body: some View {
         let shapes = shapes
@@ -174,7 +175,7 @@ private struct GooLayer: View {
                 .fill(.white)
                 .colorEffect(ShaderLibrary.liquid(
                     .float(Float(Self.softness * metrics.scale)),
-                    .float(Self.gain),
+                    .float(Self.edge),
                     .floatArray(shapes)
                 ))
         }

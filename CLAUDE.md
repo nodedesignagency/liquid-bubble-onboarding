@@ -29,16 +29,17 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
 - Top: back chevron and "Skip" in a slim row, then a centered title (30pt semibold) and one-line
   gray subtitle. Bottom: small page dots and one ink pill button ("Continue", then "Get started").
 - Liquid: the reference's effect, measured from the user's video and reproduced: a pale
-  translucent wash about 10pt beyond each photo (to the middle of its soft edge, which fades over
-  about 12pt more), flat inside, no
+  translucent wash about 11pt beyond each photo, a blur (shoulder 8pt) cut by a soft threshold so
+  neighbours round into one outline with shallow scallops; the visible edge fades over about 8pt
+  like the reference (a longer fade reads as fog on device), flat inside, no
   lighting, no hard edge, bridging to neighbours that come close. Photos are big and packed
   tight (nearly touching in a ring, overlapping in a trio), so the liquid reads as a thin halo
   around a group, never as a body of liquid with small photos floating in it. One pale tint per
   crew (lilac, butter, sky), blending where they meet.
-- Photos: big, candid, warm (Unsplash). They dissolve into the liquid: sharp middle, blurred toward
-  the rim, and the rim itself translucent (feathering from 65% of the radius) so the liquid shows
-  through it. Nothing is drawn outside the circle: a blurred rim pushed outward reads as a drop
-  shadow (the user's biggest complaint). No borders, no shadows, no dark vignette.
+- Photos: big, candid, warm (Unsplash). The reference's blur: a sharp middle dissolving into a
+  heavily blurred copy that spills about 20% past the circle, lightened 20% and washed 45% with the
+  liquid color so the spill is pale but visible, as in the reference. A dark spill reads as a drop shadow (the user's biggest
+  complaint), so never let the blur stay dark. No borders, no shadows, no dark vignette.
 - Motion: the user now wants the reference's bounce (overshoot on arrivals and on the bloom),
   smooth elsewhere. Earlier "no bouncy springs" is superseded; still no jittery or rubbery idle.
 
@@ -60,8 +61,10 @@ edges, but wanted an original story, which is the current one.
    (jelly spring), then you separate still joined by a liquid thread. Two keyframes.
 3. `.circle` "Your circle grows": three friends bud out of each of you; each bud's neck stretches
    into a thread instead of snapping, making one connected liquid network.
-4. `.world` "Your world, in orbit": everything drains into one drop (keyframe 1), which swells into
-   Earth with eight friends clinging to its rim, slowly orbiting (keyframe 2).
+4. `.world` "Your world, in orbit": everything drains into one drop (keyframe 1), which blooms into
+   the reference's ring: nine photos, big and nearly touching, empty middle, slowly turning
+   (keyframe 2). Earth is out of this scene for now (its dark NASA rim); the pastel globe can
+   return to the middle later.
 5. `.collapse` after "Get started": everything melts into Earth, which shrinks to nothing, then the
    placeholder home screen plays `.world` again.
 
@@ -73,7 +76,7 @@ edges, but wanted an original story, which is the current one.
   strength spring) and optional labels.
 - `Orbit/Bubbles/OrbitChoreography.swift`: the layouts per scene, as keyframes, in a 372 x 480
   reference space centered on the stage. Bubble 0 is Earth, 1 you, 2 the friend you bump, 3-5
-  your friends, 6-8 theirs.
+  your friends, 6-8 theirs, 9 one more for the ring.
 - `Orbit/Bubbles/BubbleStage.swift`: the view. `GooLayer` draws the liquid with the `liquid` Metal
   shader (`Orbit/Bubbles/Liquid.metal`) through `.colorEffect`: discs and capsules with soft
   shoulders summed into one field, no threshold; the preview tool mirrors the same formula. Photos
@@ -84,7 +87,7 @@ edges, but wanted an original story, which is the current one.
   Core Image; `AvatarFace`, `EarthFace`.
 - `Orbit/Onboarding/`: copy (`OnboardingStep`), screen (`OnboardingView`), controls.
 - `Orbit/Theme/Theme.swift`: colors, including the liquid's light, base, deep and shade.
-- `Orbit/Assets.xcassets`: `earth`, `friend-1` (you) to `friend-8`.
+- `Orbit/Assets.xcassets`: `earth`, `friend-1` (you) to `friend-9`.
 
 SwiftUI gotchas learned on device:
 

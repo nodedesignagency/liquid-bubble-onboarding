@@ -60,7 +60,7 @@ spin. Each bud plays a soft haptic as it lets go of its parent.
 
 - **Copy**: `Onboarding/OnboardingStep.swift` (title, subtitle and scene per page).
 - **Colors**: `Theme/Theme.swift` (the liquid's lilac, butter and sky washes; mirror them in `GooTint`).
-- **Photos**: replace `friend-1` (you) … `friend-8` in `Assets.xcassets`. A missing photo falls back
+- **Photos**: replace `friend-1` (you) … `friend-9` in `Assets.xcassets`. A missing photo falls back
   to initials.
 
 ## Checking changes without Xcode

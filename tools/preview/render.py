@@ -13,7 +13,7 @@ os.makedirs(out_dir, exist_ok=True)
 S, W, H, FPS = 2, 402, 874, 30
 BG = np.array([0xFA, 0xFA, 0xFA], float)
 LIQ = np.array([0xEA, 0xDD, 0xF1], float)   # Theme.liquid, the wash the photo rims melt into
-SOFT, GAIN = 6.0, 1.3                      # GooLayer.softness (reference pt) and gain
+SOFT, EDGE = 8.0, 0.2                      # GooLayer.softness (reference pt) and edge
 INK, INK2, HAIR = (0x1D, 0x1D, 0x1F), (0x86, 0x86, 0x8B), (0xDB, 0xDB, 0xDC)
 SLOT = (194, 748)
 scale = min(W / 372, (SLOT[1] - SLOT[0]) / 480, 1.3)
@@ -32,22 +32,27 @@ def radial_alpha(n, a, b):
     yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n - 0.5
     return np.clip((b - np.hypot(xx, yy) * 2) / (b - a), 0, 1)
 
+REACH = 1.2   # SoftPhoto.reach: the rendered face is this much wider than its circle, to hold the spill
 def soft_photo(im):
-    """Mirror of SoftPhoto: corners filled with the wash; the blurred photo solid to 65% of the radius and
-    fading out at the edge, under the sharp middle dissolving into it. Nothing drawn outside the circle."""
-    n = im.width
-    yy, xx = (np.mgrid[0:n, 0:n] + 0.5) / n - 0.5
-    outside = (np.hypot(xx, yy) * 2 > 1)[..., None]
-    sharp = np.where(outside, LIQ, np.asarray(im, float))
-    soft = np.asarray(Image.fromarray(sharp.astype("uint8")).filter(ImageFilter.GaussianBlur(n * 0.05)), float)
-    a_soft = radial_alpha(n, 0.65, 1.0)[..., None]; a_sharp = radial_alpha(n, 0.4, 0.75)[..., None]
+    """Mirror of SoftPhoto: sharp middle dissolving into a heavily blurred copy that spills past the circle,
+    lightened and washed with the liquid's colour."""
+    n = im.width; pad = int(round(n * (REACH - 1) / 2)); m = n + 2 * pad
+    yy, xx = (np.mgrid[0:m, 0:m] + 0.5 - m / 2) / n
+    rr = np.hypot(xx, yy) * 2                      # 1.0 at the circle's edge
+    big = np.broadcast_to(LIQ, (m, m, 3)).copy(); big[pad:pad + n, pad:pad + n] = np.asarray(im, float)
+    sharp = np.where((rr > 1)[..., None], LIQ, big)
+    soft = np.asarray(Image.fromarray(sharp.astype("uint8")).filter(ImageFilter.GaussianBlur(n * 0.07)), float)
+    soft = soft + (255 - soft) * 0.2
+    soft = soft * 0.55 + LIQ * 0.45
+    a_sharp = radial_alpha(m, 0.45 / REACH, 0.78 / REACH)[..., None]
+    a_soft = radial_alpha(m, 0.9 / REACH, 1.0)[..., None]
     rgb = sharp * a_sharp + soft * (1 - a_sharp)
     alpha = a_sharp + a_soft * (1 - a_sharp)
     return Image.fromarray(np.dstack([rgb, alpha * 255]).astype("uint8"), "RGBA")
 
 FACE = 320
 faces = {}
-for i in range(0, 9):
+for i in range(0, 10):
     path = os.path.join(assets, "earth.imageset/earth.jpg" if i == 0 else f"friend-{i}.imageset/friend-{i}.jpg")
     faces[i] = soft_photo(Image.open(path).convert("RGB").resize((FACE, FACE), Image.LANCZOS))
 
@@ -62,7 +67,9 @@ with open(threads_csv) as fh:
         threads[int(r["frame"])].append((int(r["a"]), int(r["b"]), float(r["strength"])))
 
 def ease(x): x = min(max(x, 0), 1); return x * x * (3 - 2 * x)
-def halo(r): return min(10, 2 + r * 0.22)   # OrbitChoreography.haloWidth
+def smoothstep(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t)
+def halo(r): return min(11, 2 + r * 0.24)   # OrbitChoreography.haloWidth
 def pt(x, y): return (ox + x * scale, oy + y * scale)   # reference space -> screen points
 
 gy, gx = np.mgrid[0:H * S, 0:W * S].astype(float)
@@ -112,7 +119,7 @@ for fi in sorted(rows):
         u = np.clip(((PX - ax) * vx + (PY - ay) * vy) / max(vx * vx + vy * vy, 1e-4), 0, 1)
         radius = 8 * min(s_, 1.2) * scale * (0.75 + 0.25 * np.abs(2 * u - 1))
         add(shoulder(np.hypot(PX - (ax + u * vx), PY - (ay + u * vy)), radius), (A[4] + B[4]) / 2)
-    alpha = np.clip(field * GAIN, 0, 1)[..., None]
+    alpha = smoothstep(0.5 - EDGE, 0.5 + EDGE, field)[..., None]
     color = tint / np.maximum(field, 1e-9)[..., None]
     frame = Image.fromarray((color * alpha + base * (1 - alpha)).astype("uint8")).convert("RGBA")
 
@@ -120,7 +127,7 @@ for fi in sorted(rows):
     order = sorted(bubbles.values(), key=lambda b: -1 if b[0] == 0 else b[3])
     for i, x, y, r, _ in order:
         if r <= 0.5: continue
-        dpx = max(1, int(round(2 * r * scale * S))); cx, cy = pt(x, y); cx, cy = cx * S, cy * S
+        dpx = max(1, int(round(2 * r * scale * S * REACH))); cx, cy = pt(x, y); cx, cy = cx * S, cy * S
         if -dpx < cx < W * S + dpx and -dpx < cy < H * S + dpx:
             frame.alpha_composite(faces[i].resize((dpx, dpx), Image.LANCZOS), (int(cx - dpx / 2), int(cy - dpx / 2)))
 

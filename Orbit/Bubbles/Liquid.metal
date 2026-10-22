@@ -4,16 +4,17 @@ using namespace metal;
 
 /// The liquid behind the photos, evaluated per pixel (used through `.colorEffect` in `GooLayer`).
 ///
-/// Every photo is a disc and every thread between two photos a capsule, each with the soft
-/// shoulder a Gaussian blur would give it. They are summed into one field: where two come close
-/// the shoulders add up and bridge, so neighbours share one lobed outline, and a bubble pulling
-/// away from its parent drags a neck of liquid with it. There is no threshold anywhere: the edge
-/// is the shoulder itself, and inside, the colour is flat and pale.
+/// It is a Gaussian blur cut by a soft threshold, like the reference, only computed directly:
+/// every photo is a disc and every thread between two photos a capsule, each with the wide, soft
+/// shoulder a blur would give it (`softness`), summed into one field. Where two come close the
+/// shoulders add up, so the iso-line between neighbours rounds off and they share one outline
+/// with shallow scallops, and a bubble pulling away from its parent drags a neck of liquid with
+/// it. The field is then cut at 0.5 over a short ramp (`edge`), which is the visible soft edge.
+/// Inside, the colour is flat and pale.
 ///
 /// `shapes` holds 9 floats per shape: kind (0 disc, 1 capsule), x1, y1, x2, y2, radius, r, g, b.
-/// Positions and radii are in the view's points. `softness` is the width of the shoulder and
-/// `gain` lets two shoulders that overlap reach full strength while a lone edge stays soft.
-[[ stitchable ]] half4 liquid(float2 position, half4 color, float softness, float gain,
+/// Positions and radii are in the view's points; a disc's radius is where its edge sits.
+[[ stitchable ]] half4 liquid(float2 position, half4 color, float softness, float edge,
                               device const float *shapes, int count) {
     float field = 0.0;
     float3 tint = float3(0.0);
@@ -39,7 +40,7 @@ using namespace metal;
     if (field < 1e-4) {
         return half4(0.0);
     }
-    const float alpha = clamp(field * gain, 0.0, 1.0);
+    const float alpha = smoothstep(0.5 - edge, 0.5 + edge, field);
     tint /= field;
     return half4(half3(tint * alpha), half(alpha));
 }

@@ -19,9 +19,9 @@ struct Person: Identifiable {
 }
 
 extension Person {
-    /// Ids 1...8 match the bubbles in `OrbitChoreography`: you, the friend you bump, then everyone else.
+    /// Ids 1...9 match the bubbles in `OrbitChoreography`: you, the friend you bump, then everyone else.
     static let samples: [Person] = [
-        "Maya", "Kwame", "Ines", "Kai", "Amara", "Theo", "Priya", "Omar",
+        "Maya", "Kwame", "Ines", "Kai", "Amara", "Theo", "Priya", "Omar", "Lena",
     ].enumerated().map { index, name in
         Person(id: index + 1, name: name)
     }

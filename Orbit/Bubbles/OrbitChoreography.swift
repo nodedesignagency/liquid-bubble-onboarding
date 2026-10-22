@@ -23,11 +23,11 @@ struct Keyframe {
 
 /// Bubble positions for every `OrbitScene`.
 ///
-/// Bubble 0 is Earth, 1 is you, 2 is the friend you bump, 3...5 are your friends and 6...8 are
-/// theirs. Coordinates are in the stage's 372 x 480 reference space, centered on the middle of
-/// the stage.
+/// Bubble 0 is Earth, 1 is you, 2 is the friend you bump, 3...5 are your friends, 6...8 are
+/// theirs and 9 is one more for the ring. Coordinates are in the stage's 372 x 480 reference
+/// space, centered on the middle of the stage.
 enum OrbitChoreography {
-    static let bubbleCount = 9
+    static let bubbleCount = 10
     static let earth = 0
     static let you = 1
     static let friend = 2
@@ -109,20 +109,19 @@ enum OrbitChoreography {
         return BubbleLayout(targets: targets)
     }
 
-    /// The drop swells into Earth and your people bud back out, clinging to its rim like droplets.
+    /// The drop blooms into the ring: nine photos, big and nearly touching, one liquid around them
+    /// and nothing in the middle. The reference's ring, measured: photo radius 40, ring radius 133.
     private static var world: BubbleLayout {
-        let rim: [(Double, CGFloat)] = [(-100, 38), (-55, 34), (-10, 36), (35, 32), (80, 38), (125, 34), (170, 36), (215, 32)]
         var targets = tucked()
-        targets[earth] = BubbleTarget(radius: 92, appearDelay: 0, moveDelay: 0)
-        for (i, spot) in rim.enumerated() {
-            // Half over Earth's edge, close enough to the next one that the ring reads as one liquid.
+        targets[earth] = BubbleTarget(radius: 0, moveDelay: 0.2)
+        for i in 0..<9 {
             targets[1 + i] = BubbleTarget(
-                center: polar(92 + spot.1 * 0.5, spot.0),
-                radius: spot.1,
-                appearDelay: 0.25 + 0.07 * Double(i)
+                center: polar(133, -90 + 40 * Double(i)),
+                radius: 40,
+                appearDelay: 0.25 + 0.06 * Double(i)
             )
         }
-        return BubbleLayout(targets: targets, spin: 0.06)
+        return BubbleLayout(targets: targets, spin: 0.04)
     }
 
     private static var collapse: BubbleLayout {
@@ -136,10 +135,10 @@ enum OrbitChoreography {
     // MARK: Helpers
 
     /// The band of pale liquid around a photo, in reference points, measured to the middle of its
-    /// soft edge: about 10 on a big photo (the reference's band is thin), tapering away for tiny
+    /// soft edge: about 11 on a big photo (the reference's band is thin), tapering away for tiny
     /// ones so they grow out of their parent smoothly.
     static func haloWidth(_ radius: CGFloat) -> CGFloat {
-        min(10, 2 + radius * 0.22)
+        min(11, 2 + radius * 0.24)
     }
 
     /// Each bubble tucked inside the one it grows out of: your friends inside you, your friend's inside them.
