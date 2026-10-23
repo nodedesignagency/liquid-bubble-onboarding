@@ -5,8 +5,8 @@ import MapKit
 /// the opening passes through has rendered, with a big dome of clear glass rising from the bottom
 /// edge, "Swipe up to enter" on it like Wabi's. Swipe it up and it sweeps off over the city, the
 /// map flattens, rises and pulls all the way back (from satellite snapshots fetched while it
-/// loaded, so it never waits on the network) until the real Earth is a ball, which dissolves in
-/// place into a holographic globe ("Everyone you love, / in one orbit."). Six friends pop up as
+/// loaded, so it never waits on the network); the photo turns in place into a glowing map, which
+/// curls into a holographic globe as it pulls back ("Everyone you love, / in one orbit."). Six friends pop up as
 /// pins on their cities, then lift off into orbit round Earth, joined to it by necks of liquid
 /// glass, over a faint dot grid. Drag around Earth to spin everyone, the globe with them. Tap a
 /// friend and everyone else melts into Earth, which parks in the top-left corner, while the friend
@@ -54,8 +54,6 @@ struct WorldOnboardingView: View {
     /// a property's initial value is built every time the view is.
     @State private var city: CityMapController?
     @State private var imagery = ZoomImagery()
-    /// The real Earth for the globe while the zoom runs, taken from `imagery` when it starts.
-    @State private var globeImagery: GlobeImagery?
     @State private var stageSize = CGSize.zero
     /// The dark cover over the city until it has rendered, and a spinner if that takes a while.
     @State private var cityCover = 1.0
@@ -199,8 +197,8 @@ struct WorldOnboardingView: View {
 
     // MARK: The zoom
 
-    /// The city, then the flat snapshots zooming out, under the stage, until the globe takes over
-    /// with the same imagery on the sphere.
+    /// The city, then the flat snapshots zooming out, under the stage, until the hologram (a flat
+    /// map at first, in the same projection) has faded in over them.
     private func zoomLayer(size: CGSize) -> some View {
         TimelineView(.animation) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
@@ -229,7 +227,7 @@ struct WorldOnboardingView: View {
     private func globeLayer(earth: RenderedBubble?, size: CGSize) -> some View {
         let t = now
         if let state = globe(at: t, earth: earth, size: size) {
-            HoloGlobeView(state: state, palette: palette, time: t, imagery: globeImagery)
+            HoloGlobeView(state: state, palette: palette, time: t)
         }
     }
 
@@ -607,9 +605,7 @@ struct WorldOnboardingView: View {
             domeVisible = false
             let size = stageSize
             let handoff = city.metersPerPoint() ?? city.handoffEstimate ?? 3.5
-            globeImagery = imagery.globe
-            path = ZoomPath(startScale: handoff, levels: imagery.levels, imagery: globeImagery,
-                            rest: restGlobe(size: size), size: size)
+            path = ZoomPath(startScale: handoff, levels: imagery.levels, rest: restGlobe(size: size), size: size)
             zoomStart = now
             guard await pause(EarthZoom.zoomOut * 0.8) else { return }
             show(.space)
@@ -669,8 +665,7 @@ struct WorldOnboardingView: View {
             // Back the way it came, from wherever the globe has turned to.
             var rest = current.rest
             rest.longitude = turnedLongitude(rest.longitude, at: now)
-            path = ZoomPath(startScale: current.startScale, levels: imagery.levels, imagery: globeImagery,
-                            rest: rest, size: stageSize)
+            path = ZoomPath(startScale: current.startScale, levels: imagery.levels, rest: rest, size: stageSize)
             backStart = now
             guard await pause(EarthZoom.zoomBack) else { return }
             city?.settle()

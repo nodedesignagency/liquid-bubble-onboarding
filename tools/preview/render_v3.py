@@ -5,9 +5,9 @@
 # Keep the timings (V3_*) in sync with WorldOnboardingView and tools/engine/record.swift (v3 script).
 #
 # What it can't show: the city (MapKit's 3D Paris) and the satellite snapshots the zoom is drawn
-# from. The city is a labelled stand-in; the snapshots (flat at first, then on the sphere) are the
-# globe itself in plain stand-in satellite colours (`globe.py`'s `satellite`), dissolving into the
-# hologram, so the motion and framing are meaningful but not the imagery. Glass is drawn the way it looks before iOS 26 (a dark outline, a frosted
+# from. The city is a labelled stand-in; the snapshots are the same coastline drawn flat in plain
+# photo colours (`globe.py`'s `PHOTO`), which the flat hologram fades in over, so the motion,
+# framing and registration are meaningful but not the imagery. Glass is drawn the way it looks before iOS 26 (a dark outline, a frosted
 # dome); on iOS 26 it is real Liquid Glass. The globe's scale at the handover (METERS_PER_POINT) is
 # measured on the device; here it is assumed. Nunito stands in for SF Pro Rounded. iPhone 17 Pro
 # sized (402 x 874 pt).
@@ -83,21 +83,19 @@ SCREEN_CENTER = (W / 2, H / 2)
 SPANS = []                                                            # ZoomImagery.fetch
 span = METERS_PER_POINT * DIAG * 1.45
 while span <= 6.0e6: SPANS.append(span); span *= 3.2
-LAYERS = SPANS[-3:]                                                   # the globe's regional snapshots (and the world)
 def scale_for_radius(r): return EARTH_RADIUS * (math.sqrt(1 + (FOCAL / r) ** 2) - 1) / FOCAL
-_finer = [x for x in SPANS if x < LAYERS[0] * 0.9]
-SPHERE_FROM = max((_finer[-1] * 0.8 / DIAG / 0.5 if _finer else METERS_PER_POINT * 1.5) * 1.05, METERS_PER_POINT * 1.2)
-SPHERE_TO = SPHERE_FROM * 1.3
-DISSOLVE_FROM = max(scale_for_radius(290), SPHERE_TO * 1.2)
-DISSOLVE_TO = scale_for_radius(145)
-DRIFT_FROM = math.sqrt(DISSOLVE_FROM * DISSOLVE_TO)
+CURL_TO = scale_for_radius(DIAG / 2 * 1.12)
+HOLOGRAM_TO = max(min(SPANS[-1] * 0.8 / DIAG * 0.92, CURL_TO / 1.3), METERS_PER_POINT * 2)
+HOLOGRAM_FROM = max(HOLOGRAM_TO / 2.6, METERS_PER_POINT * 1.4)
+GLOW_TO = scale_for_radius(200)
+DRIFT_FROM = scale_for_radius(240)
 TOTAL = math.log(END_SCALE) - math.log(METERS_PER_POINT)
-_middle = (math.log(DRIFT_FROM) - math.log(METERS_PER_POINT)) / TOTAL
+_middle = (math.log(math.sqrt(HOLOGRAM_FROM * CURL_TO)) - math.log(METERS_PER_POINT)) / TOTAL
 def _profile(dip):
     cum = [0.0]
     for step in range(256):
         u = (step + 0.5) / 256
-        cum.append(cum[-1] + 6 * u * (1 - u) * (1 - 0.8 * math.exp(-((u - dip) / 0.13) ** 2)))
+        cum.append(cum[-1] + 6 * u * (1 - u) * (1 - 0.8 * math.exp(-((u - dip) / 0.17) ** 2)))
     return [c / cum[-1] for c in cum]
 lo, hi = 0.1, 0.95
 for _ in range(30):
@@ -112,19 +110,18 @@ def depth_at(u):
 def zscale(u): return math.exp(math.log(METERS_PER_POINT) + TOTAL * depth_at(u))
 def between(s, a, b): return ease((math.log(s) - math.log(a)) / max(math.log(b) - math.log(a), 1e-6))
 def roll_at(u): return START_ROLL * (1 - ease(depth_at(u) / 0.75))
-def shows_snapshots(u): return zscale(u) < SPHERE_TO
+def shows_snapshots(u): return zscale(u) < HOLOGRAM_TO
 
 def globe_on_path(u, rest_lon):
     s = zscale(u)
     dist = 1 + s * FOCAL / EARTH_RADIUS
     radius = FOCAL / math.sqrt(dist * dist - 1)
     k = between(s, DRIFT_FROM, END_SCALE)
-    h = between(s, DISSOLVE_FROM, DISSOLVE_TO)
     return dict(cx=SCREEN_CENTER[0] + (REST["center"][0] - SCREEN_CENTER[0]) * k,
                 cy=SCREEN_CENTER[1] + (REST["center"][1] - SCREEN_CENTER[1]) * k,
                 radius=radius, dist=dist, lat=CITY[0] + (REST["lat"] - CITY[0]) * k,
-                lon=CITY[1] + (rest_lon - CITY[1]) * k, roll=roll_at(u), glow=h, satellite=1 - h,
-                opacity=between(s, SPHERE_FROM, SPHERE_TO))
+                lon=CITY[1] + (rest_lon - CITY[1]) * k, roll=roll_at(u), glow=between(s, CURL_TO, GLOW_TO),
+                flatness=1 - between(s, HOLOGRAM_TO, CURL_TO), opacity=between(s, HOLOGRAM_FROM, HOLOGRAM_TO))
 
 def lon_at(t):
     if t < V3_BLOOM: return REST["lon"]
@@ -298,14 +295,13 @@ for fi in sorted(rows):
         cover = 1 - (1 - min(t / V3_COVER, 1)) ** 2 if t < V3_ZOOM else 1.0
         rgb = CANVAS + (CITY_RGB - CANVAS) * cover
         labels.append(("stand-in: MapKit's 3D Paris, the Eiffel Tower", 0.5 * H, (40, 40, 48)))
-    # the flat snapshots (stand-in: the real Earth's colours on the globe, which they match)
+    # the flat snapshots (stand-in: the same coastline, flat, in photo colours)
     if u is not None and stack > 0:
         s = zscale(u)
         dist = 1 + s * FOCAL / EARTH_RADIUS; radius = FOCAL / math.sqrt(dist * dist - 1)
         srgb, sa = holo.globe(PX, PY, SCREEN_CENTER[0], SCREEN_CENTER[1], radius, dist, CITY[0], CITY[1], roll=roll_at(u),
-                              glow=0, palette=PALETTE, satellite=1)
+                              holo=0, glow=0, palette=holo.PHOTO, flatness=1)
         rgb = rgb * (1 - stack) + (srgb + rgb * (1 - sa[..., None])) * stack
-    if u is not None and 0 < u < 1 and zscale(u) < DISSOLVE_FROM:
         labels.append(("stand-in: satellite snapshots", 0.12 * H, (230, 230, 235)))
     # the gate's shade over the city
     shade = gate_shade(t)
@@ -335,7 +331,7 @@ for fi in sorted(rows):
         g = globe_on_path(u, lon_at(t))
     elif u is not None:
         g = dict(cx=REST["center"][0], cy=REST["center"][1], radius=REST["radius"], dist=REST["distance"],
-                 lat=REST["lat"], lon=lon_at(t), roll=0, glow=1, opacity=1, satellite=0)
+                 lat=REST["lat"], lon=lon_at(t), roll=0, glow=1, opacity=1, flatness=0)
         e = bubbles.get(0)
         if e and e[3] > 0.5:
             g["cx"], g["cy"] = pt(e[1], e[2])
@@ -356,7 +352,7 @@ for fi in sorted(rows):
         if x1 > x0 and y1 > y0:
             grgb, ga = holo.globe(PX[y0:y1, x0:x1], PY[y0:y1, x0:x1], g["cx"], g["cy"], g["radius"], g["dist"], g["lat"], g["lon"],
                                   roll=g["roll"], glow=g["glow"], opacity=g["opacity"], time=t,
-                                  palette=PALETTE, satellite=g["satellite"])
+                                  palette=PALETTE, flatness=g["flatness"])
             rgb[y0:y1, x0:x1] = grgb + rgb[y0:y1, x0:x1] * (1 - ga[..., None])
     img = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
     for text, y, col in labels:

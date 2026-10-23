@@ -8,13 +8,13 @@ import MapKit
 ///
 /// 1. The city: a live `MKMapView` (3D Paris), shown only once it has rendered.
 /// 2. While it holds, satellite snapshots of the same spot at widening spans are fetched
-///    (`ZoomImagery`), each about 3x wider than the last, up to a few thousand kilometres, and one
-///    of the whole world. The first is drawn in 3D like the live map, so the handover is seamless.
+///    (`ZoomImagery`), each about 3x wider than the last, up to a few thousand kilometres. The
+///    first ones are drawn in 3D like the live map, so the handover is seamless.
 /// 3. The map flattens to looking straight down and rises a little (still MapKit), then hands
-///    over to the snapshots, which zoom out smoothly (`ZoomStack`). Before the Earth's curve
-///    could show, the globe takes over with the same snapshots on the sphere (`GlobeImagery`),
-///    so the real Earth pulls back into a ball, then dissolves in place into the holographic
-///    globe (`HoloGlobeView`) and drifts to its place on the page.
+///    over to the snapshots, which zoom out smoothly (`ZoomStack`). The hologram fades in over
+///    them as a flat map with the same projection, scale and turn (`GlobeState.flatness`), so
+///    the photo turns into it coast on coast; pulling back further, it curls into the globe
+///    (`HoloGlobeView`), which drifts to its place on the page.
 ///
 /// Everything after the handover is a pure function of time (`ZoomPath`), so nothing can load late.
 enum EarthZoom {
@@ -64,12 +64,6 @@ enum EarthZoom {
         let lat2 = asin(sin(lat1) * cos(angle) + cos(lat1) * sin(angle) * cos(theta))
         let lon2 = lon1 + atan2(sin(theta) * sin(angle) * cos(lat1), cos(angle) - sin(lat1) * sin(lat2))
         return CLLocationCoordinate2D(latitude: lat2 * 180 / .pi, longitude: lon2 * 180 / .pi)
-    }
-
-    /// Web Mercator's y for a latitude in degrees (radians of the map's height).
-    static func mercator(_ latitude: Double) -> Double {
-        let phi = min(max(latitude, -85.05), 85.05) * .pi / 180
-        return log(tan(.pi / 4 + phi / 2))
     }
 }
 
@@ -165,25 +159,17 @@ struct CityMapView: UIViewRepresentable {
 
 // MARK: - The zoom's imagery
 
-/// Satellite snapshots of the city at widening spans, and one of the whole world, fetched while
-/// the city holds.
+/// Satellite snapshots of the city at widening spans, fetched while the city holds.
 final class ZoomImagery {
     struct Level {
         let image: UIImage
-        /// The same, for the globe's shader (made once, so it isn't uploaded again every frame).
-        let shaderImage: Image
-        /// Metres per image point at the city, measured on the snapshot itself.
+        /// Metres per image point at the city (east-west, which Web Mercator keeps north-south
+        /// too), measured on the snapshot itself.
         let metersPerPoint: Double
         /// Where the city is in the image, relative to its middle, in image points.
         let cityOffset: CGPoint
         /// The image's side, in points.
         let side: CGFloat
-        /// Web Mercator, as measured: the city in uv (0...1) and uv per radian of longitude (the
-        /// same per Mercator unit north). False if the snapshot didn't measure as Mercator, and then
-        /// the globe doesn't use it.
-        let cityUV: CGPoint
-        let uvPerRadian: Double
-        let isMercator: Bool
 
         /// Metres across, at the city.
         var span: Double { Double(side) * metersPerPoint }
@@ -191,25 +177,11 @@ final class ZoomImagery {
 
     /// Finest first.
     private(set) var levels: [Level] = []
-    /// The whole world, and where it maps.
-    private(set) var world: (image: Image, map: GlobeImagery.Map)?
     private(set) var started = false
     private var pending = 0
     private var snapshotters: [MKMapSnapshotter] = []
 
     var isComplete: Bool { started && pending == 0 }
-
-    /// What the globe draws while it is still the real Earth: the world, and the three widest
-    /// regional snapshots (the finer ones are only seen flat, before the globe takes over).
-    var globe: GlobeImagery? {
-        let layers = levels.filter(\.isMercator).suffix(3).map {
-            GlobeImagery.Layer(image: $0.shaderImage, cityUV: $0.cityUV, uvPerRadian: $0.uvPerRadian, span: $0.span)
-        }
-        guard world != nil || !layers.isEmpty else { return nil }
-        return GlobeImagery(world: world?.image, worldMap: world?.map ?? GlobeImagery.Map(u0: 0, uPerRadian: 0, v0: 0, vPerMercator: 0),
-                            layers: Array(layers),
-                            cityRadians: CGPoint(x: EarthZoom.city.latitude * .pi / 180, y: EarthZoom.city.longitude * .pi / 180))
-    }
 
     /// `handoff` is metres per point when MapKit hands over; `diagonal` the screen's, in points.
     /// The first snapshot covers the screen's diagonal with room to spare at that scale.
@@ -222,12 +194,11 @@ final class ZoomImagery {
             spans.append(span)
             span *= EarthZoom.spanStep
         }
-        pending = spans.count + 1
+        pending = spans.count
         for (index, span) in spans.enumerated() {
             // The first is seen largest, right as MapKit hands over, so it gets the most pixels.
             request(span: span, side: index == 0 ? 1_100 : 800, scale: index == 0 ? 3 : 2)
         }
-        requestWorld()
     }
 
     private func request(span: Double, side: CGFloat, scale: CGFloat) {
@@ -237,57 +208,18 @@ final class ZoomImagery {
         options.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: span < EarthZoom.realisticSpan ? .realistic : .flat)
         options.pointOfInterestFilter = .excludingAll
         options.traitCollection = UITraitCollection(displayScale: scale)
-        start(options) { [weak self] snapshot in
-            guard let self, let level = Self.measure(snapshot, span: span) else { return }
-            self.levels.append(level)
-            self.levels.sort { $0.metersPerPoint < $1.metersPerPoint }
-        }
-    }
-
-    private func requestWorld() {
-        let options = MKMapSnapshotter.Options()
-        options.mapRect = .world
-        options.size = CGSize(width: 1_536, height: 1_536)
-        options.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .flat)
-        options.pointOfInterestFilter = .excludingAll
-        options.traitCollection = UITraitCollection(displayScale: 2)
-        start(options) { [weak self] snapshot in
-            guard let self else { return }
-            let size = snapshot.image.size
-            guard size.width > 1, size.height > 1 else { return }
-            func uv(_ latitude: Double, _ longitude: Double) -> CGPoint {
-                let p = snapshot.point(for: CLLocationCoordinate2D(latitude: latitude, longitude: longitude))
-                return CGPoint(x: p.x / size.width, y: p.y / size.height)
-            }
-            // Fitted on four points and checked on a fifth, so a snapshot that isn't the flat
-            // Mercator world (MapKit could draw a globe) is never mapped onto the sphere.
-            let west = uv(0, -90), east = uv(0, 90), north = uv(60, 0), south = uv(-60, 0)
-            let uPerRadian = Double(east.x - west.x) / .pi
-            let u0 = Double(west.x) + uPerRadian * .pi / 2
-            let m60 = EarthZoom.mercator(60)
-            let vPerMercator = Double(south.y - north.y) / (2 * m60)
-            let v0 = Double(north.y) + vPerMercator * m60
-            let probe = uv(45, 45)
-            guard uPerRadian > 0.05, vPerMercator > 0.05,
-                  abs(Double(probe.x) - (u0 + uPerRadian * .pi / 4)) < 0.01,
-                  abs(Double(probe.y) - (v0 - vPerMercator * EarthZoom.mercator(45))) < 0.01 else { return }
-            self.world = (Image(uiImage: snapshot.image),
-                          GlobeImagery.Map(u0: u0, uPerRadian: uPerRadian, v0: v0, vPerMercator: vPerMercator))
-        }
-    }
-
-    private func start(_ options: MKMapSnapshotter.Options, done: @escaping (MKMapSnapshotter.Snapshot) -> Void) {
         let snapshotter = MKMapSnapshotter(options: options)
         snapshotters.append(snapshotter)
         snapshotter.start(with: .main) { [weak self] snapshot, _ in
             guard let self else { return }
             self.pending -= 1
-            if let snapshot { done(snapshot) }
+            guard let snapshot, let level = Self.measure(snapshot, span: span) else { return }
+            self.levels.append(level)
+            self.levels.sort { $0.metersPerPoint < $1.metersPerPoint }
         }
     }
 
-    /// The snapshot's scale and Mercator mapping, measured on it: a step east and a step north of
-    /// the city, a tenth of the span each.
+    /// The snapshot's scale at the city: a step east, a tenth of the span, in image points.
     private static func measure(_ snapshot: MKMapSnapshotter.Snapshot, span: Double) -> Level? {
         let city = EarthZoom.city
         let size = snapshot.image.size
@@ -298,48 +230,11 @@ final class ZoomImagery {
         let east = snapshot.point(for: CLLocationCoordinate2D(latitude: city.latitude, longitude: city.longitude + stepEast * 180 / .pi))
         let pointsPerRadian = Double(east.x - c.x) / stepEast
         guard pointsPerRadian.isFinite, pointsPerRadian > 1 else { return nil }
-        let stepNorth = span * 0.1 / EarthZoom.earthRadius * 180 / .pi           // degrees of latitude
-        let north = snapshot.point(for: CLLocationCoordinate2D(latitude: city.latitude + stepNorth, longitude: city.longitude))
-        let expected = -pointsPerRadian * (EarthZoom.mercator(city.latitude + stepNorth) - EarthZoom.mercator(city.latitude))
-        let isMercator = abs(Double(north.y - c.y) - expected) < 0.02 * abs(expected) && abs(north.x - c.x) < 1
-        return Level(image: snapshot.image, shaderImage: Image(uiImage: snapshot.image),
+        return Level(image: snapshot.image,
                      metersPerPoint: EarthZoom.earthRadius * cos(latitude) / pointsPerRadian,
                      cityOffset: CGPoint(x: c.x - size.width / 2, y: c.y - size.height / 2),
-                     side: size.width,
-                     cityUV: CGPoint(x: c.x / size.width, y: c.y / size.height),
-                     uvPerRadian: pointsPerRadian / Double(size.width),
-                     isMercator: isMercator)
+                     side: size.width)
     }
-}
-
-/// The real Earth on the globe while the zoom pulls back: Web Mercator snapshots, mapped onto the
-/// sphere by the `holoGlobe` shader. Made by `ZoomImagery`.
-struct GlobeImagery {
-    /// Where a point lands on the world snapshot: u = u0 + uPerRadian * longitude, v = v0 -
-    /// vPerMercator * mercator(latitude), longitude in radians.
-    struct Map {
-        var u0: Double
-        var uPerRadian: Double
-        var v0: Double
-        var vPerMercator: Double
-    }
-
-    struct Layer {
-        let image: Image
-        /// The city in the image (0...1), and the image's scale in uv per radian of longitude
-        /// (Mercator's is the same north-south).
-        let cityUV: CGPoint
-        let uvPerRadian: Double
-        /// Metres across the image, at the city (it fades out by this as the zoom pulls back).
-        let span: Double
-    }
-
-    var world: Image?
-    var worldMap: Map
-    /// Up to three regional snapshots, finest first.
-    var layers: [Layer]
-    /// The city the regional snapshots are centred near: latitude (x) and longitude (y), radians.
-    var cityRadians: CGPoint
 }
 
 /// The snapshots, zoomed to `metersPerPoint` with the city at `center`: the finest one that still
@@ -409,47 +304,40 @@ struct ZoomStack: View {
 
 /// The zoom from the handover to the globe at rest, as a function of its progress `u` (0 at the
 /// handover, 1 at rest; the zoom back runs it backwards). Scale is eased in log space, so rooftops
-/// to orbit keep one steady sense of speed, slowing while the real Earth dissolves into the
-/// hologram so that moment reads:
+/// to orbit keep one steady sense of speed, slowing while the photo turns into the hologram so that
+/// moment reads:
 ///
 /// 1. The flat snapshots (`ZoomStack`) pull back from the city.
-/// 2. Before the Earth's curve could show (the sphere and the flat picture differ by under 3 points
-///    at the corners), the globe takes over with the same snapshots on the sphere
-///    (`sphereFrom`...`sphereTo`), and the real Earth pulls back into a ball.
-/// 3. Once the whole Earth is in view, it dissolves in place into the hologram, coast on coast,
-///    its aura growing (`dissolveFrom`...`dissolveTo`); it drifts to its place on the page and turns
-///    to its resting view meanwhile (from `driftFrom`).
-///
-/// Without imagery (offline) the hologram simply fades in over whatever there is.
+/// 2. While the widest snapshot still covers the screen, the hologram fades in over them as a flat
+///    map in the same projection, at the same scale and turn (`hologramFrom`...`hologramTo`): the
+///    photo turns into the glowing map in place, coast on coast. (A sphere over a flat photo
+///    doubled the coastlines; a ring sweeping out from the city was hated.)
+/// 3. Pulling back further, the map curls into the sphere (`curlTo`) while the globe's edge is
+///    still off the screen, so the curl never shows an edge; then its aura grows in, and it drifts
+///    to its place on the page and turns to its resting view (from `driftFrom`).
 struct ZoomPath {
     /// Metres per point at the handover (measured on the map) and of the globe at rest.
     var startScale: Double
     var endScale: Double
-    var sphereFrom: Double
-    var sphereTo: Double
-    var dissolveFrom: Double
-    var dissolveTo: Double
+    var hologramFrom: Double
+    var hologramTo: Double
+    var curlTo: Double
+    var glowTo: Double
     var driftFrom: Double
     /// The globe at rest, on screen.
     var rest: GlobeState
-    /// The screen's middle, where the city is during the zoom, and the screen's diagonal.
+    /// The screen's middle, where the city is during the zoom.
     var screenCenter: CGPoint
-    var diagonal: Double
-    /// Metres across each of the globe's regional snapshots, finest first.
-    var layerSpans: [Double]
-    /// Whether there is a real Earth to show at all.
-    var hasImagery: Bool
     /// How far through the zoom (in log scale) at each of 257 even steps of `u`.
     private var depths: [Double] = []
 
     /// The camera's focal length for the globe, in points: fixed, so it pulls back like a camera.
     var focal: CGFloat { rest.radius * CGFloat((rest.distance * rest.distance - 1).squareRoot()) }
 
-    init(startScale: Double, levels: [ZoomImagery.Level], imagery: GlobeImagery?, rest: GlobeState, size: CGSize) {
+    init(startScale: Double, levels: [ZoomImagery.Level], rest: GlobeState, size: CGSize) {
         self.rest = rest
         screenCenter = CGPoint(x: size.width / 2, y: size.height / 2)
         let diagonal = Double(hypot(size.width, size.height))
-        self.diagonal = diagonal
         let focal = Double(rest.radius) * (rest.distance * rest.distance - 1).squareRoot()
         self.startScale = startScale
         endScale = EarthZoom.earthRadius * (rest.distance - 1) / focal
@@ -457,52 +345,31 @@ struct ZoomPath {
         func scale(forRadius radius: Double) -> Double {
             EarthZoom.earthRadius * ((1 + (focal / radius) * (focal / radius)).squareRoot() - 1) / focal
         }
-        layerSpans = imagery?.layers.map(\.span) ?? []
-        let hasWorld = imagery?.world != nil
-        hasImagery = hasWorld || !layerSpans.isEmpty
-
-        // 2. The globe takes over once the flat snapshot just finer than its finest has faded out
-        // of the stack (`ZoomStack.layers`: at half cover), so both show the same picture.
-        if let finest = layerSpans.first {
-            let finer = levels.last { $0.span < finest * 0.9 }
-            let handover = finer.map { $0.span * 0.8 / diagonal / 0.5 } ?? startScale * 1.5
-            sphereFrom = max(handover * 1.05, startScale * 1.2)
-        } else if let coarsest = levels.last {
-            sphereFrom = max(coarsest.span * 0.8 / diagonal, startScale * 1.2)
+        // The curl ends with the globe's edge still just off the screen's corners.
+        curlTo = scale(forRadius: diagonal / 2 * 1.12)
+        // The hologram is in before the widest snapshot stops covering the screen (and no
+        // earlier than a scale where its coastlines are crisp, about 2 km a point).
+        if let widest = levels.last {
+            hologramTo = min(widest.span * 0.8 / diagonal * 0.92, curlTo / 1.3)
         } else {
-            sphereFrom = startScale * 4
+            hologramTo = curlTo / 1.6
         }
-        sphereTo = sphereFrom * 1.3
+        hologramTo = max(hologramTo, startScale * 2)
+        hologramFrom = max(hologramTo / 2.6, startScale * 1.4)
+        glowTo = scale(forRadius: 200)
+        driftFrom = scale(forRadius: 240)
 
-        // 3. The dissolve: the whole Earth in view, about 290 points to 145 points in radius. Without
-        // the world snapshot, before the widest regional one stops covering the screen instead.
-        if hasWorld || !hasImagery {
-            dissolveFrom = scale(forRadius: 290)
-            dissolveTo = scale(forRadius: 145)
-        } else {
-            let covers = (layerSpans.last ?? 0) * 0.8 / diagonal
-            dissolveTo = max(min(covers * 1.4, scale(forRadius: 150)), sphereTo * 2.2)
-            dissolveFrom = dissolveTo / 2.2
-        }
-        dissolveFrom = max(dissolveFrom, sphereTo * 1.2)
-        driftFrom = (dissolveFrom * dissolveTo).squareRoot()
-        if !hasImagery {
-            // Nothing to hand over to: whatever is on screen stays until the hologram fades in.
-            sphereFrom = dissolveFrom
-            sphereTo = dissolveTo
-        }
-
-        // The speed of the zoom: a smooth bell (smoothstep's), with a dip where the dissolve happens.
-        // The dip is placed by bisection, so that the zoom, slowed by it, is at the dissolve's middle
-        // right at the slowest point.
+        // The speed of the zoom: a smooth bell (smoothstep's), with a dip while the photo turns
+        // into the hologram and curls into the globe, placed by bisection so the zoom, slowed by
+        // it, is in the middle of that right at the slowest point.
         let total = log(endScale) - log(startScale)
-        let middle = (log(driftFrom) - log(startScale)) / total
+        let middle = (log((hologramFrom * curlTo).squareRoot()) - log(startScale)) / total
         func profile(dip: Double) -> [Double] {
             let steps = 256
             var cumulative = [0.0]
             for step in 0..<steps {
                 let u = (Double(step) + 0.5) / Double(steps)
-                let g = (u - dip) / 0.13
+                let g = (u - dip) / 0.17
                 let speed = 6 * u * (1 - u) * (1 - 0.8 * exp(-g * g))
                 cumulative.append(cumulative[step] + speed)
             }
@@ -548,18 +415,16 @@ struct ZoomPath {
         EarthZoom.startRoll * (1 - Self.ease(depth(scale(at: u)) / 0.75))
     }
 
-    /// The flat snapshots are needed until the globe has taken over.
-    func showsSnapshots(at u: Double) -> Bool { scale(at: u) < sphereTo }
+    /// The flat snapshots are needed until the hologram covers them.
+    func showsSnapshots(at u: Double) -> Bool { scale(at: u) < hologramTo }
 
-    /// The globe at `u`: the real Earth facing the city at the screen's middle, taking over from
-    /// the flat snapshots, then dissolving into the hologram while it drifts to its place and turns
-    /// to face its resting point.
+    /// The globe at `u`: a flat map over the snapshots at first, fading in, then curling into the
+    /// sphere, its aura growing, drifting to its place and turning to face its resting point.
     func globe(at u: Double) -> GlobeState {
         let s = scale(at: u)
         let distance = 1 + s * Double(focal) / EarthZoom.earthRadius
         let radius = focal / CGFloat((distance * distance - 1).squareRoot())
         let k = between(s, driftFrom, endScale)
-        let holo = between(s, dissolveFrom, dissolveTo)
         var state = rest
         state.distance = distance
         state.radius = radius
@@ -568,15 +433,9 @@ struct ZoomPath {
         state.latitude = EarthZoom.city.latitude + (rest.latitude - EarthZoom.city.latitude) * k
         state.longitude = EarthZoom.city.longitude + (rest.longitude - EarthZoom.city.longitude) * k
         state.roll = roll(at: u)
-        state.glow = rest.glow * holo
-        state.satellite = hasImagery ? 1 - holo : 0
-        state.opacity = hasImagery ? between(s, sphereFrom, sphereTo) : holo
-        // Each regional snapshot fades out as it shrinks from covering the screen to covering half
-        // of it, like the flat ones (`ZoomStack.layers`); the world is always under them.
-        state.layerOpacity = layerSpans.map { span in
-            let cover = span * 0.8 / (s * diagonal)
-            return Self.ease((log(max(cover, 1e-6)) - log(0.5)) / log(2))
-        }
+        state.opacity = between(s, hologramFrom, hologramTo)
+        state.flatness = 1 - between(s, hologramTo, curlTo)
+        state.glow = rest.glow * between(s, curlTo, glowTo)
         return state
     }
 }

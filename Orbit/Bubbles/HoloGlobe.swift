@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 /// Everything that places and styles v3's globe on screen. See `GlobeMath` for the geometry.
 struct GlobeState: Equatable {
@@ -19,11 +18,10 @@ struct GlobeState: Equatable {
     var holo: Double = 1
     var glow: Double = 1
     var opacity: Double = 1
-    /// How much of the real Earth shows (satellite snapshots on the sphere, see `GlobeImagery`)
-    /// instead of the hologram: 1 while the zoom pulls back from the city, dissolving to 0.
-    var satellite: Double = 0
-    /// The opacity of each of `GlobeImagery.layers` (finest first) at this scale.
-    var layerOpacity: [Double] = []
+    /// How flat it is: 1 is a flat Web Mercator map at the scale and turn of the point facing you,
+    /// exactly like the zoom's satellite snapshots (so they cross-fade into it coast on coast), 0
+    /// the sphere.
+    var flatness: Double = 0
 }
 
 /// The globe's colours. Aurora (the default) is the one the user picked from a sheet of six: a dark
@@ -85,61 +83,29 @@ struct GlobePalette: Equatable {
 }
 
 /// v3's globe: the `holoGlobe` shader over the whole stage, so its aura can spread past it. Sharp
-/// at any size, because it is drawn per pixel rather than scaled. While `state.satellite` is above
-/// zero it draws `imagery` (the real Earth) on the sphere too.
+/// at any size, because it is drawn per pixel rather than scaled. The shader takes exactly one
+/// image: with more, SwiftUI didn't run it on device and drew this white rectangle instead.
 struct HoloGlobeView: View {
     var state: GlobeState
     var palette: GlobePalette
     /// Seconds, for the sheen's slow drift.
     var time: Double
-    var imagery: GlobeImagery? = nil
 
     private static let land = Image("land-sdf")
-    /// Stands in for any snapshot the shader doesn't need this frame.
-    private static let blank = Image(uiImage: UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { context in
-        UIColor.black.setFill()
-        context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
-    })
 
     var body: some View {
-        // The snapshots go to the shader only while they show, so the globe at rest stays light.
-        let real = state.satellite > 0.001 ? imagery : nil
-        let layers = real?.layers ?? []
-        let map = real?.worldMap ?? GlobeImagery.Map(u0: 0, uPerRadian: 0, v0: 0, vPerMercator: 0)
-        let city = real?.cityRadians ?? CGPoint.zero
-        let hasWorld: Float = real?.world == nil ? 0 : 1
         Rectangle()
             .fill(.white)
             .colorEffect(ShaderLibrary.holoGlobe(
                 .image(Self.land),
-                .image(real?.world ?? Self.blank),
-                .image(Self.image(0, of: layers)),
-                .image(Self.image(1, of: layers)),
-                .image(Self.image(2, of: layers)),
                 .float4(Float(state.center.x), Float(state.center.y), Float(state.radius), Float(state.distance)),
                 .float4(Float(state.latitude * .pi / 180), Float(state.longitude * .pi / 180),
                         Float(state.roll * .pi / 180), 0),
                 .float4(Float(state.holo), Float(state.glow), Float(state.opacity), Float(time.truncatingRemainder(dividingBy: 1000))),
-                .float4(Float(state.satellite), hasWorld, 0, 0),
-                .float4(Float(map.u0), Float(map.uPerRadian), Float(map.v0), Float(map.vPerMercator)),
-                .float4(Float(city.x), Float(city.y), 0, 0),
-                level(0, of: layers),
-                level(1, of: layers),
-                level(2, of: layers),
+                .float4(Float(state.flatness), 0, 0, 0),
                 .floatArray(palette.floats)
             ))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-    }
-
-    private static func image(_ index: Int, of layers: [GlobeImagery.Layer]) -> Image {
-        index < layers.count ? layers[index].image : blank
-    }
-
-    /// A snapshot's place in the shader's `level` arguments: the city's uv, uv per radian, opacity.
-    private func level(_ index: Int, of layers: [GlobeImagery.Layer]) -> Shader.Argument {
-        guard index < layers.count, index < state.layerOpacity.count else { return .float4(0, 0, 0, 0) }
-        let layer = layers[index]
-        return .float4(Float(layer.cityUV.x), Float(layer.cityUV.y), Float(layer.uvPerRadian), Float(state.layerOpacity[index]))
     }
 }

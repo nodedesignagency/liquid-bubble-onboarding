@@ -77,6 +77,13 @@ and coffee, not only people, from a stock library (they suggested Mobbin, which 
 screenshots; the photos came from Magnific's Freepik stock instead). One screenshot had a red
 vertical line between the subtitle and the buttons with no comment: asked what it meant.
 
+The build after that ("everything fucked up"): from the zoom on, the whole screen was white, with
+only the photos and buttons on it. The globe's shader had been given five images (satellite
+snapshots to draw the real Earth on the sphere) and SwiftUI didn't run it on device, so it drew
+its plain white full-screen rectangle over the zoom, the glass and the page. Never give a SwiftUI
+shader more than the one image `holoGlobe` has always had. The dissolve was rebuilt with the
+shader's original arguments (a flat hologram registered with the flat photos, see step 4).
+
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
   `BubbleEngine` (settled on its first scene in `init`, passed to `BubbleStage(engine:)`, never
@@ -90,9 +97,8 @@ vertical line between the subtitle and the buttons with no comment: asked what i
      soon as the map has a size, `ZoomImagery` fetches satellite snapshots of the same spot
      (`MKMapSnapshotter`), each 3.2x wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt
      at 2x; under 20 km drawn with realistic elevation like the live map, so the handover doesn't
-     jump), and one of the whole world (`MKMapRect.world`, 1536pt at 2x). Each is measured on
-     itself (scale, and whether it is Web Mercator: a step east and a step north of the city; the
-     world fitted on four points and checked on a fifth); the gate waits for them (at most 4 s).
+     jump). Each is measured on itself (points per radian of longitude at the city, which is
+     Web Mercator's scale both ways); the gate waits for them (at most 4 s).
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
      iOS 26) rises from below (`SpringCurve.domeIn`). Like Wabi's gate (on Mobbin), the hint sits
@@ -101,18 +107,18 @@ vertical line between the subtitle and the buttons with no comment: asked what i
      a flick, or a tap on it enters, else it springs back. Entering, it sweeps up off the screen
      (`domeOut`) over the city.
   3. Rise (0.3 s later, 1.3 s, UIKit camera animation): pitch to 0, distance 2.6 km.
-  4. Zoom out (5 s, `ZoomPath`): scale eased in log space, slowest during the dissolve (a dip
-     placed by bisection). `ZoomStack` fades in over the map (0.6 s) and crossfades the snapshots
-     by scale (a finer one fades out between covering the screen and covering half of it), turned
-     by the map's heading and unwinding to north up. Around 280 m/pt, once the snapshot finer than
-     the globe's finest has faded (the sphere and the flat picture differ by under 3pt at the
-     corners), the globe takes over (`sphereFrom`-`sphereTo`) with the same imagery on the sphere
-     (`GlobeImagery`: the world plus the three widest regional snapshots, Web Mercator mapped in
-     the shader), so the real Earth pulls back into a ball with a thin blue atmosphere. With the
-     whole Earth in view (globe radius 290pt to 145pt, about 3.3-4.2 s) it dissolves in place into
-     the hologram, coast on coast, its aura growing; meanwhile it drifts from the screen's middle
-     to its place and turns from Paris to 25N 12E. (Replaced the ring sweep the user hated, and the
-     older flat crossfade whose doubled coastlines came from a flat Mercator photo under a sphere.)
+  4. Zoom out (5 s, `ZoomPath`): scale eased in log space, slowest while the photo turns into
+     the hologram and curls (a dip placed by bisection). `ZoomStack` fades in over the map (0.6 s)
+     and crossfades the snapshots by scale (a finer one fades out between covering the screen and
+     covering half of it), turned by the map's heading and unwinding to north up. While the widest
+     snapshot still covers the screen (about 1.5 to 4 km/pt, 2.5-3.2 s in), the hologram fades in
+     over the photos as a flat Web Mercator map (`GlobeState.flatness` 1) at exactly their scale,
+     centre and turn, so the photo turns into the glowing map coast on coast. Pulling back
+     further, it curls into the sphere (flatness to 0 by `curlTo`, where the globe's edge is still
+     12% beyond the screen's corners, so no edge shows mid-curl), its aura grows in, and it drifts
+     to its place and turns from Paris to 25N 12E. (Replaced: the ring sweep the user hated; the
+     first flat crossfade, whose doubled coastlines came from a sphere over a flat photo; and
+     satellite photos on the sphere, which broke the shader, see above.)
   5. "Everyone you love, / in one orbit." under the globe; pins (`.pins`): Earth's glass seeps out
      from under the globe and six friends pop up as pins on their cities (London, Lagos,
      Johannesburg, Istanbul, Nairobi, Dubai; `OrbitChoreography.people`, `homeCircle`), with a white
@@ -150,10 +156,11 @@ vertical line between the subtitle and the buttons with no comment: asked what i
   violet sea, lavender land), Afterglow (peach and blush land), Midnight bloom (royal to plum
   sea), Lavender sky. In a debug build, long-press the screen (once everyone is in orbit) for the
   next one; a capsule names it, and it's remembered (`globePalette.2`, renamed when Aurora became
-  the default). While the zoom runs, the same shader draws the real Earth on the sphere
-  (`imagery.x` of it, textures `world` and `sat1`-`sat3`, only passed while it shows), lit like a
-  planet with a blue atmosphere, dissolving into the hologram. Compared in a mock first
-  (`tools/preview/globe.py`, which mirrors the shader; its `satellite` uses stand-in colours).
+  the default). `form.x` (`flatness`) blends the map's lookup from the sphere to a flat Web
+  Mercator map at the sphere's scale at the point facing you (cos(lat0) * focal / (dist - 1)
+  points per radian), for the zoom's crossfade. Its arguments must stay one image (`land-sdf`),
+  four float4s and the palette (more images and it doesn't run). Compared in a mock first
+  (`tools/preview/globe.py`, which mirrors the shader; `PHOTO` is the snapshots' stand-in).
 - Glass (`Orbit/Bubbles/GlassNetwork.swift`): a ring for everyone visible (Earth's 91 round the 84
   globe, friends 27 to 34, moments 29 to 33, photo 5pt inside) and a neck from the biggest (the
   one in the middle) to each other one, joined with `Path.union` into one outline and drawn as one
@@ -345,16 +352,13 @@ SwiftUI gotchas learned on device:
 
 ## Open items
 
-- v3's new zoom (the real Earth on the sphere dissolving into the hologram), the Aurora globe,
-  the corner Earth and moments, the one-shape glass and the Wabi-style hint were just built;
-  waiting on the user's recording. Never compiled: watch the `holoGlobe` shader's new arguments
-  (five textures; does SwiftUI accept that many `.image` arguments?), `MKMapSnapshotter.Options`
-  `preferredConfiguration` with realistic elevation, `MKMapRect.world` snapshots (does the world
-  one pass the Mercator check? if not, the dissolve moves earlier, before the widest regional
-  snapshot stops covering the screen), `glassEffect` on a unioned `Path` every frame (cost), and
-  `proxy.safeAreaInsets` inside a GeometryReader that ignores the safe area (59 if it reads 0).
-  On the recording check: the handover at the tower (should be seamless now), the flat-to-sphere
-  takeover around 2.1 s into the zoom, the dissolve, Earth's flight to the corner, the moments.
+- v3 after the white-screen fix: the globe shader is back to its original arguments (only the
+  flat blend is new), so it should run again. Still never seen on device: the dissolve (flat
+  hologram over the photos, then the curl), the Aurora globe, the corner Earth and moments, the
+  one-shape glass (`glassEffect` on a unioned `Path` every frame), the 3D first snapshots
+  (`preferredConfiguration` realistic; the handover at the tower was hidden by the white screen),
+  and `proxy.safeAreaInsets` inside a GeometryReader that ignores the safe area (59 if it reads 0).
+  The gate's new hint (handle and words on the glass) was seen working.
 - The user's earlier recording (the one before this) confirmed: the gate dome, the city waiting
   until rendered (no grey), six friends, tap to focus, the dot grid hidden under the glass.
 - MapKit's Apple Maps logo and Legal link show during the city but not in the snapshots.

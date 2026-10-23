@@ -32,15 +32,14 @@ MIDNIGHT = palette(0x1A1F7A, 0x571768, 0xBB73F7, 0xCDBDFF, 0xDD92E2, 0x8759F6, 0
 AURORA = palette(0x07343B, 0x042127, 0x2FD3A0, 0x84EAD6, 0xC8F48A, 0x6CDCD8, 0x8EEFC0, 0x17B07E, 0x4BD4A5, sheen=0.7, backlight=1.0)
 LAVENDER = palette(0x5C49F5, 0xBB73F7, 0xEFB0C3, 0xFFF4FA, 0xEFB0C3, 0xFFFFFF, 0xDD92E2, 0x8759F6, 0xEFB0C3, sheen=0.5, backlight=0.9)
 
-# Stand-in for the satellite snapshots the shader draws on the sphere during the zoom (the preview
-# can't fetch Apple's imagery): a dark sea and olive land from the same coastline.
-PHOTO_SEA, PHOTO_LAND = np.array([0x0B, 0x20, 0x33]) / 255, np.array([0x6F, 0x75, 0x56]) / 255
-AIR = np.array([0.42, 0.66, 1.0])
+# Stand-in for the zoom's satellite snapshots (the preview can't fetch Apple's imagery): the same
+# coastline in plain photo colours, drawn flat (flatness 1) like the snapshots.
+PHOTO = palette(0x0B2033, 0x0F2A40, 0x000000, 0x6F7556, 0x6F7556, 0x6F7556, 0x6F7556, 0x000000, 0x000000, sheen=0.0, backlight=0.0)
 
 def globe(px, py, cx, cy, radius, dist, lat0, lon0, roll=0.0, holo=1.0, glow=1.0, opacity=1.0, time=0.0,
-          palette=None, satellite=0.0):
-    """Premultiplied rgb and alpha. Positions in points, angles in degrees. `satellite` (0 to 1)
-    is how much of the real Earth shows instead of the hologram (stand-in imagery here)."""
+          palette=None, flatness=0.0):
+    """Premultiplied rgb and alpha. Positions in points, angles in degrees. `flatness` 1 draws a flat
+    Web Mercator map at the scale and turn of the point facing you, like the zoom's snapshots."""
     pal = np.array(palette if palette is not None else DUSK, float)
     col3 = lambda i: pal[i * 3:i * 3 + 3]
     ocean_top, ocean_bottom, rim_c, land_base = col3(0), col3(1), col3(2), col3(3)
@@ -56,7 +55,6 @@ def globe(px, py, cx, cy, radius, dist, lat0, lon0, roll=0.0, holo=1.0, glow=1.0
     r = np.hypot(qx, qy)
     beyond = np.maximum(r - radius, 0)
     aura = glow * (0.42 * np.exp(-beyond / (0.30 * radius)) + 0.35 * np.exp(-beyond / (0.06 * radius)))
-    air = satellite * 0.55 * np.exp(-beyond / (0.022 * radius))
     edge = 1 - _ss(radius - 0.6, radius + 0.6, r)
     focal = radius * math.sqrt(dist * dist - 1)
     n = np.sqrt((qx / focal) ** 2 + (qy / focal) ** 2 + 1)
@@ -71,6 +69,16 @@ def globe(px, py, cx, cy, radius, dist, lat0, lon0, roll=0.0, holo=1.0, glow=1.0
     y1 = Py * ca - Pz * sa; z1 = Py * sa + Pz * ca
     Ex = Px * cb + z1 * sb; Ey = y1; Ez = -Px * sb + z1 * cb
     lat = np.arcsin(np.clip(Ey, -1, 1)); lon = np.arctan2(Ex, Ez)
+    if flatness > 0:
+        # the flat map centred on the point facing you, at the sphere's scale there
+        per_radian = math.cos(math.radians(lat0)) * focal / (dist - 1)
+        y0 = math.log(math.tan(math.pi / 4 + 0.5 * min(max(math.radians(lat0), -1.48), 1.48)))
+        flat_lat = 2 * np.arctan(np.exp(y0 - qy / per_radian)) - math.pi / 2
+        dlon = (math.radians(lon0) + qx / per_radian) - lon
+        dlon = dlon - 2 * math.pi * np.floor((dlon + math.pi) / (2 * math.pi))
+        lat = lat + (flat_lat - lat) * flatness
+        lon = lon + dlon * flatness
+    Gx, Gy = np.cos(lat) * np.sin(lon), np.sin(lat)                   # where that is, Earth frame
     u = (lon + math.pi) / (2 * math.pi); v = (math.pi / 2 - lat) / math.pi
     sd = (_sample(u, v) - coast) * unit
     L = np.array([-0.45, 0.55, 0.70]); L = L / np.linalg.norm(L)
@@ -94,7 +102,7 @@ def globe(px, py, cx, cy, radius, dist, lat0, lon0, roll=0.0, holo=1.0, glow=1.0
     ocean = ocean_top + (ocean_bottom - ocean_top) * vt
     ocean = ocean + (0.18 * fres)[..., None] * rim_c
     ocean = ocean * (0.75 + 0.35 * np.clip(ndl, 0, 1))[..., None]
-    phase = 1.3 * (1 - ndv) + 0.5 * Ex + 0.35 * Ey + 0.06 * time
+    phase = 1.3 * (1 - ndv) + 0.5 * Gx + 0.35 * Gy + 0.06 * time
     w4 = (0.5 + 0.5 * np.sin(2 * math.pi * phase))[..., None]
     w5 = (0.5 + 0.5 * np.sin(2 * math.pi * (phase * 0.7 + 0.31)))[..., None]
     sheen = sheen_c + (sheen_a - sheen_c) * w4
@@ -115,13 +123,6 @@ def globe(px, py, cx, cy, radius, dist, lat0, lon0, roll=0.0, holo=1.0, glow=1.0
     back = np.clip(Px * Bl[0] + Py * Bl[1] + Pz * Bl[2], 0, 1) ** 2 * (1 - ndv) ** 1.5
     c = c + (back_strength * back)[..., None] * back_c
     c = np.clip(c, 0, 1)
-    if satellite > 0.001:
-        # the real Earth: the snapshots (stand-in colours here), lit like a planet, with its air
-        photo = PHOTO_SEA + (PHOTO_LAND - PHOTO_SEA) * land[..., None]
-        photo = photo * np.clip(0.65 + 0.5 * ndl, 0, 1)[..., None]
-        photo = photo + (AIR - photo) * (0.55 * fres)[..., None]
-        c = c + (photo - c) * satellite
-    outside = aura_c * aura[..., None] + AIR * air[..., None]
-    rgb = c * edge[..., None] + outside * (1 - edge)[..., None]
-    alpha = np.maximum(edge, np.clip(aura + air, 0, 1))
+    rgb = c * edge[..., None] + aura_c * (aura * (1 - edge))[..., None]
+    alpha = np.maximum(edge, np.clip(aura, 0, 1))
     return rgb * opacity, alpha * opacity

@@ -8,8 +8,8 @@ versions; the home screen at the end lets you replay any of them.
 1. It opens on Paris in 3D (Apple's map, through MapKit), once it has fully loaded, with a big
    dome of clear glass rising from the bottom edge, "Swipe up to enter" on the glass.
 2. Swipe it away and the city pulls back through the sky. The zoom is drawn from satellite
-   snapshots fetched while the city loaded, so it never waits on the network: the real Earth
-   pulls back into a ball, then dissolves in place into a glowing holographic globe: "Everyone you
+   snapshots fetched while the city loaded, so it never waits on the network: the photo turns in
+   place into a glowing map, which curls into a holographic globe as it pulls back: "Everyone you
    love, in one orbit."
 3. Six friends pop up as pins on their cities, then lift off into orbit round Earth, each joined
    to it by a neck of liquid glass (real Liquid Glass on iOS 26), over a faint dot grid.
@@ -58,12 +58,12 @@ and zoom need a network connection (MapKit downloads the imagery); it waits for 
   glowing from aqua to lime with a little relief, a dark teal sea, a mint rim and a green aura
   (Aurora). Four more colourways in the hues of the FlightElite onboarding (`GlobePalette`: Dusk,
   Afterglow, Midnight bloom, Lavender sky); in a debug build, long-press the screen to try the next.
-  During the zoom the same shader draws the satellite snapshots on the sphere (Web Mercator mapped
-  per pixel), so the real Earth turns into the hologram coast on coast.
+  During the zoom it is drawn flat at first, in the same projection and scale as the satellite
+  snapshots, so the photo turns into it coast on coast, then curls into the sphere.
 - **v3 zoom** (`Bubbles/EarthZoom.swift`): the live map only for the city; the zoom out runs through
-  satellite snapshots at widening spans and one of the whole world (fetched while the city loads),
-  crossfaded by scale and eased in log space, flat at first and then on the globe, so nothing
-  loads mid-zoom. The first snapshot is drawn in 3D like the live map, so the handover is seamless.
+  satellite snapshots at widening spans (fetched while the city loads), crossfaded by scale and
+  eased in log space, so nothing loads mid-zoom. The first snapshots are drawn in 3D like the live
+  map, so the handover is seamless.
 - **v3 glass** (`Bubbles/GlassNetwork.swift`): Earth and each friend (or moment) sit in a ring of
   Liquid Glass, joined to whoever is in the middle by metaball necks, all unioned into one outline
   and drawn as one shape of glass, so there are no seams. The page under the glass is filled
