@@ -398,10 +398,10 @@ private struct HubGlow: View {
         // The aura's falloff past the edge, as fractions of the radius: 0.42 e^(-b/0.3) + 0.35 e^(-b/0.06).
         let beyond: [CGFloat] = [0, 0.06, 0.15, 0.3, 0.6, 1.2]
         let glow: [Double] = [0.77, 0.47, 0.28, 0.16, 0.06, 0]
-        var stops: [Gradient.Stop] = [Gradient.Stop(color: colors.inner.opacity(0.77 * strength * 0.9), location: 0)]
+        var stops: [Gradient.Stop] = [Gradient.Stop(color: colors.inner.opacity(0.77 * strength * 0.8), location: 0)]
         for i in beyond.indices {
             let tint = beyond[i] < 0.2 ? colors.inner : colors.outer
-            stops.append(Gradient.Stop(color: tint.opacity(glow[i] * strength * 0.9), location: (1 + beyond[i]) * radius / reach))
+            stops.append(Gradient.Stop(color: tint.opacity(glow[i] * strength * 0.8), location: (1 + beyond[i]) * radius / reach))
         }
         return Circle()
             .fill(RadialGradient(stops: stops, center: .center, startRadius: 0, endRadius: reach))

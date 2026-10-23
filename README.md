@@ -122,4 +122,5 @@ those parts are labelled stand-ins.
 - Earth (v1, v2): NASA Goddard Space Flight Center, "Blue Marble" (public domain). v3's city and
   zoom imagery: Apple Maps, via MapKit. v3's coastlines: Natural Earth (public domain).
 - Photos: [Unsplash](https://unsplash.com/license), free to use under the Unsplash License. v3's
-  moments: Freepik stock (via Magnific), credits and licences in `docs/moment-photos.json`.
+  portraits and moments: Freepik stock (via Magnific), credits and licences in
+  `docs/portrait-photos.json` and `docs/moment-photos.json`.

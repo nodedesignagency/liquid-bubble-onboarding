@@ -1,0 +1,71 @@
+{
+  "note": "v3's portraits (Orbit/Assets.xcassets/person-*), real photographs from the Freepik stock library via Magnific, downloaded under the account's Premium+ plan (no credits). Free-licence items need attribution unless the account is premium; check before shipping.",
+  "items": [
+    {
+      "file": "person-1.jpg",
+      "friend": "Maya",
+      "city": "London",
+      "freepikId": 104491507,
+      "title": "Portrait of smiling young woman",
+      "author": "galinkazhi",
+      "license": "premium",
+      "pageUrl": "https://www.magnific.com/premium-photo/portrait-smiling-young-woman_104491507.htm",
+      "background": "deep teal (dark green-teal foliage, soft bokeh)"
+    },
+    {
+      "file": "person-2.jpg",
+      "friend": "Kwame",
+      "city": "Lagos",
+      "freepikId": 60314240,
+      "title": "Close-up portrait of smiling african american young man at beach against clear sky during sunset",
+      "author": "Wavebreak Media",
+      "license": "premium",
+      "pageUrl": "https://www.magnific.com/premium-photo/close-up-portrait-smiling-african-american-young-man-beach-against-clear-sky-sunset_60314240.htm",
+      "background": "blush peach (pastel dusk sky over the sea)"
+    },
+    {
+      "file": "person-3.jpg",
+      "friend": "Ines",
+      "city": "Johannesburg",
+      "freepikId": 1923930,
+      "title": "Smiling woman looking at camera at the beach",
+      "author": "Wavebreak Media",
+      "license": "premium",
+      "pageUrl": "https://www.magnific.com/premium-photo/smiling-woman-looking-camera-beach_1923930.htm",
+      "background": "sky blue (clear sky and sea)"
+    },
+    {
+      "file": "person-4.jpg",
+      "friend": "Kai",
+      "city": "Istanbul",
+      "freepikId": 27587280,
+      "title": "Summertime always gets me smiling Portrait of a handsome young man standing outside in the sun",
+      "author": "The Yuri Arcurs Collection",
+      "license": "premium",
+      "pageUrl": "https://www.magnific.com/premium-photo/summertime-always-gets-me-smiling-portrait-handsome-young-man-standing-outside-sun_27587280.htm",
+      "background": "golden-hour amber (backlit, warm bokeh)"
+    },
+    {
+      "file": "person-5.jpg",
+      "friend": "Amara",
+      "city": "Nairobi",
+      "freepikId": 255361580,
+      "title": "Happy black woman and portrait with braids in nature for summer or eco friendly environment at park Face of young African or female person with smile makeup or beauty for day in outdoor sunshine",
+      "author": "The Yuri Arcurs Collection",
+      "license": "premium",
+      "pageUrl": "https://www.magnific.com/premium-photo/happy-black-woman-portrait-with-braids-nature-summer-eco-friendly-environment-park-face-young-african-female-person-with-smile-makeup-beauty-day-outdoor-sunshine_255361580.htm",
+      "background": "leafy green (sunlit park bokeh, green-gold)"
+    },
+    {
+      "file": "person-6.jpg",
+      "friend": "Zoe",
+      "city": "Dubai",
+      "freepikId": 5044064,
+      "title": "Portrait of young beautiful woman",
+      "author": "freepik (shown as 'magnific')",
+      "license": "free",
+      "pageUrl": "https://www.magnific.com/free-photo/portrait-young-beautiful-woman_5044064.htm",
+      "background": "coral red (painted corrugated wall, daylight)"
+    }
+  ]
+}

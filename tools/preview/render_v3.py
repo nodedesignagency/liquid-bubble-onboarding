@@ -313,7 +313,7 @@ def glow_colors(i):                                                   # WorldPho
     def glowing(rgb):
         import colorsys
         h, s_, v = colorsys.rgb_to_hsv(*rgb)
-        return np.array(colorsys.hsv_to_rgb(h, min(s_ * 1.4 + 0.08, 1), max(v, 0.82)))
+        return np.array(colorsys.hsv_to_rgb(h, min(s_ * 1.25 + 0.05, 0.72), max(v, 0.88)))
     out = (glowing(a[band & (dy < -0.15)].mean(axis=0)), glowing(a[band & (dy >= -0.15)].mean(axis=0)))
     _glow_cache[i] = out
     return out
@@ -324,7 +324,7 @@ def hub_glow(rgb, b):                                                 # HubGlow
     inner, outer = glow_colors(b[0])
     c = pt(b[1], b[2]); R = (b[3] - min(5, b[3] * 0.15)) * SCALE
     beyond = np.maximum(np.hypot(PX - c[0], PY - c[1]) - R, 0) / R
-    a = np.interp(beyond, [0, 0.06, 0.15, 0.3, 0.6, 1.2], [0.77, 0.47, 0.28, 0.16, 0.06, 0]) * strength * 0.9
+    a = np.interp(beyond, [0, 0.06, 0.15, 0.3, 0.6, 1.2], [0.77, 0.47, 0.28, 0.16, 0.06, 0]) * strength * 0.8
     col = np.where((beyond < 0.2)[..., None], inner, outer)
     return rgb * (1 - a[..., None]) + col * a[..., None]
 

@@ -204,8 +204,11 @@ sized like their reference with the mark pinned left and the words centred.
   `fullRadius` (photos pop only when appearing or leaving, not when a pin grows), an appearing
   bubble buds out of the anchor its target names (a friend's moments out of them). `bubbleCount`
   is 40 for the moments; `homeCorner` is a static var the screen sets.
-- v3's portraits are `person-1`...`person-6` (`WorldPhoto.image` falls back to `friend-<id>`,
-  which v1 and v2 keep using).
+- v3's portraits are `person-1`...`person-6` (720px; Freepik stock via Magnific, picked for an
+  attractive, candid look and one clear background colour each, so each friend's glow differs:
+  deep teal, blush peach, sky blue, golden amber, leafy green, coral red; credits in
+  `docs/portrait-photos.json`). `WorldPhoto.image` falls back to `friend-<id>`, which v1 and v2
+  keep using.
 - Moment photos (`Orbit/Assets.xcassets/moment-<friend>-<n>`, 480px): real photographs from the
   Freepik stock library through the Magnific MCP (`stock_search`/`stock_download`, which spend no
   credits; never call its generation tools without asking), picked by a subagent from previews and

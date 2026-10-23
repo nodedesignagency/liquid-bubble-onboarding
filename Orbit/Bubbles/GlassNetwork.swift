@@ -214,11 +214,13 @@ enum WorldPhoto {
         return (glowing(top.map { $0 / topCount }), glowing(sides.map { $0 / sideCount }))
     }
 
-    /// A background colour made to glow on the dark page: more saturated, and bright.
+    /// A background colour made to glow on the dark page: a little more saturated, bright, and
+    /// never fully saturated (a coral wall went pure red and read as an alarm next to the globe's
+    /// softer aura).
     private static func glowing(_ rgb: [Double]) -> Color {
         var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
         UIColor(red: rgb[0], green: rgb[1], blue: rgb[2], alpha: 1).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        return Color(hue: Double(hue), saturation: Double(min(saturation * 1.4 + 0.08, 1)), brightness: Double(max(brightness, 0.82)))
+        return Color(hue: Double(hue), saturation: Double(min(saturation * 1.25 + 0.05, 0.72)), brightness: Double(max(brightness, 0.88)))
     }
 
     /// `moment-<friend>-<n>`: four from each of your six friends' weeks (places, coffee, food).
