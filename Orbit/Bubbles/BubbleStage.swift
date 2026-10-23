@@ -108,6 +108,7 @@ struct BubbleStage: View {
                         WorldGlass(bubbles: turned, metrics: metrics, size: proxy.size)
                         if let centerpiece {
                             centerpiece(turned.indices.contains(OrbitChoreography.earth) ? turned[OrbitChoreography.earth] : nil)
+                                .zIndex(1)
                         }
                         ForEach(turned.filter { WorldPhoto.hasPhoto($0.id) && WorldPhoto.radius(for: $0) > 0.25 }) { bubble in
                             let diameter = WorldPhoto.radius(for: bubble) * 2 * metrics.scale
@@ -116,9 +117,10 @@ struct BubbleStage: View {
                                 .position(metrics.point(bubble.center))
                                 // Budding out of a friend in the middle, they form on top of
                                 // their photo like a droplet, instead of hiding under it; melting
-                                // back into Earth, they slip under the others.
+                                // back into Earth, they slip under the others and under the globe,
+                                // but stay over the glass: its page fill would hide them at once.
                                 .zIndex(bubble.isAppearing ? 1000 + bubble.depth
-                                        : bubble.isLeaving ? -1000 + bubble.depth : bubble.depth)
+                                        : bubble.isLeaving ? 0.5 + bubble.depth / 1000 : bubble.depth)
                         }
                     }
                     ForEach(look == .v1 ? bubbles : []) { bubble in

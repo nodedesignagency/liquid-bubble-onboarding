@@ -40,6 +40,9 @@ def friends_of(i):                                                   # OrbitChor
     out = [(i - 1 + s + 9) % 9 + 1 for s in (1, -1, 2, -2)]
     extra = {1: 5, 5: 1, 2: 6, 6: 2, 3: 7, 7: 3, 4: 8, 8: 4}
     return out + ([extra[i]] if i in extra else [])
+# The globe's colours (GlobePalette): PALETTE=dusk (default), afterglow, midnight or lavender.
+PALETTE = {"dusk": holo.DUSK, "afterglow": holo.AFTERGLOW, "midnight": holo.MIDNIGHT,
+           "lavender": holo.LAVENDER}[os.environ.get("PALETTE", "dusk")]
 # A plain satellite look for the snapshots' stand-in (no sheen, aura or glow).
 SATELLITE = holo.palette(0x0B2033, 0x0F2A40, 0x2A3B48, 0x6F7556, 0x6F7556, 0x6F7556, 0x6F7556, 0x000000, 0x000000,
                          sheen=0.0, backlight=0.0)
@@ -250,6 +253,10 @@ def photo_radius(b):                                                  # WorldPho
     if full <= 0.5: return 0
     return glass_to_photo(full) * min(max((r / full - 0.3) / 0.7, 0), 1.12)
 
+def pin_edge(b):                                                      # WorldPhoto.pinEdge(for:)
+    _, _, _, r, _, _, full, appearing, vanishing = b
+    return min(max((24 - (full if appearing or vanishing else r)) / 8, 0), 1)
+
 gy_, gx_ = np.mgrid[0:H * S, 0:W * S].astype(np.float32)
 PX, PY = (gx_ + 0.5) / S, (gy_ + 0.5) / S
 GX = (PX % 18) - 9; GY = (PY % 18) - 9
@@ -332,6 +339,14 @@ for fi in sorted(rows):
             g["cx"], g["cy"] = pt(e[1], e[2])
             glass_r = e[6] if (e[7] or e[8]) else e[3]
             g["radius"] = glass_r * GLOBE_R / HUB_R * SCALE
+    # photos melting back into Earth slip under the globe (but over the glass)
+    leaving = sorted((b for b in bubbles.values() if 1 <= b[0] <= 9 and b[3] > 0.5 and b[5] and not b[7]), key=lambda b: b[4])
+    if any(photo_radius(b) >= 0.25 for b in leaving):
+        under = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
+        for b in leaving:
+            pr = photo_radius(b)
+            if pr >= 0.25: disc(under, photos[b[0]], pt(b[1], b[2]), pr * SCALE, pin_edge(b))
+        rgb = np.asarray(under, np.float32) / 255
     if g is not None and g["opacity"] > 0:
         reach = g["radius"] * 3
         rv = g["reveal"]
@@ -339,18 +354,19 @@ for fi in sorted(rows):
         y0 = max(int((g["cy"] - reach) * S), 0); y1 = min(int((g["cy"] + reach) * S) + 1, H * S)
         if x1 > x0 and y1 > y0:
             grgb, ga = holo.globe(PX[y0:y1, x0:x1], PY[y0:y1, x0:x1], g["cx"], g["cy"], g["radius"], g["dist"], g["lat"], g["lon"],
-                                  roll=g["roll"], glow=g["glow"], opacity=g["opacity"], time=t, reveal=rv)
+                                  roll=g["roll"], glow=g["glow"], opacity=g["opacity"], time=t, reveal=rv,
+                                  palette=PALETTE)
             rgb[y0:y1, x0:x1] = grgb + rgb[y0:y1, x0:x1] * (1 - ga[..., None])
     img = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
     for text, y, col in labels:
         put_text(img, 40 * S, y * S, text, note_font, col, 0.8)
-    # photos, on top of the globe; budding, they form on top; melting away, they slip under the others
-    order = sorted((b for b in bubbles.values() if 1 <= b[0] <= 9 and b[3] > 0.5),
-                   key=lambda b: (1000 + b[4]) if b[7] else (-1000 + b[4]) if b[5] else b[4])
+    # photos, on top of the globe; budding, they form on top (the ones melting away are drawn above)
+    order = sorted((b for b in bubbles.values() if 1 <= b[0] <= 9 and b[3] > 0.5 and (b[7] or not b[5])),
+                   key=lambda b: (1000 + b[4]) if b[7] else b[4])
     for b in order:
         pr = photo_radius(b)
         if pr < 0.25: continue
-        disc(img, photos[b[0]], pt(b[1], b[2]), pr * SCALE, min(max((24 - b[3]) / 8, 0), 1))
+        disc(img, photos[b[0]], pt(b[1], b[2]), pr * SCALE, pin_edge(b))
     # the copy: the old headline fades out as the new one eases in, title first
     d = ImageDraw.Draw(img)
     top = H / 2 + COPY_TOP * SCALE

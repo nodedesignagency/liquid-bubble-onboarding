@@ -128,7 +128,10 @@ asked for four versions in that hue, "just colors and shadow, other is good".
   canvas colour, so the grid doesn't show through. The globe follows Earth's bubble
   (`BubbleStage`'s `centerpiece` closure gets Earth as drawn, turned by the spin;
   `WorldPhoto.globeRadius` keeps it full size while Earth's glass seeps out or drains).
-  Layers: grid, zoom, gate shade, glass, globe, photos, copy, dome.
+  Layers: grid, zoom, gate shade, glass, photos melting away, globe, photos, copy, dome. Photos
+  melting into Earth must stay over the glass (`zIndex` 0.5 + depth/1000; the globe is 1): under
+  it, the glass's page fill hid them at once. The pin's white edge goes by `fullRadius` while a
+  bubble appears or vanishes, so only real pins have it (not buds, not friends melting away).
 - Engine additions: `popsInPlace` (pins appear on their city), `isAppearing` / `isVanishing` /
   `fullRadius` (photos pop only when appearing or leaving, not when a pin grows), an appearing
   bubble buds out of the anchor its target names (a friend's friends out of them).
@@ -292,7 +295,9 @@ SwiftUI gotchas learned on device:
   `OnboardingStep.swift`, `WorldOnboardingView.swift` and `tools/engine/record.swift`. Pillow 12
   ignores a fill's alpha when drawing text, so `render_v3.py` draws text through a mask.
   `PREVIEW_SCALE=1` renders v3 at half resolution, about four times faster (the video is scaled
-  to 600 wide anyway).
+  to 600 wide anyway). `PALETTE=afterglow` (or `midnight`, `lavender`; `dusk` by default) draws
+  v3's globe in another colourway, and `FRAMES=378,450` renders just those frames (at rest, and
+  Zoe in the middle) for comparing them.
 
 ## Open items
 
@@ -303,7 +308,11 @@ SwiftUI gotchas learned on device:
   `GlassEffectContainer`, and the MapKit calls. On the recording check: does the city wait until
   all three cameras have rendered (no grey during the rise), how the clear dome looks over the
   city, the ring sweep, whether the necks jump when a friend and Earth swap the middle (the hub is
-  whoever is bigger at that moment), and how the four palettes compare.
+  whoever is bigger at that moment), and how the four palettes compare. Reviewed line by line
+  before the recording (no build errors found; the Swift patterns were checked with a Linux
+  compiler). From the mock, Claude's pick of the palettes is Afterglow (its peach and blush land
+  on the blue sea carries the whole FlightElite gradient and sits well with the photos' skin
+  tones), Dusk second (clearest when Earth is small); the default stays Dusk until the user picks.
 - MapKit's Apple Maps logo and Legal link show during the city but not in the snapshots.
   A shipping app must credit the imagery wherever it is shown.
 - The Recollect "burst out of the icon in 3D" idea is unused; it could become the bloom's entrance.

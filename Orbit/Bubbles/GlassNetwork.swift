@@ -192,9 +192,12 @@ enum WorldPhoto {
         return photoRadius(glass: bubble.fullRadius) * min(max((grown - 0.3) / 0.7, 0), 1.12)
     }
 
-    /// The white edge a pin has on the globe, fading as the friend grows into orbit.
+    /// The white edge a pin has on the globe, fading as the friend grows into orbit. Popping up or
+    /// melting away, it goes by the size the bubble is heading for (or leaving), so a friend budding
+    /// out of someone, or shrinking back into Earth, never flashes a pin's edge on the way.
     static func pinEdge(for bubble: RenderedBubble) -> Double {
-        Double(min(max((24 - bubble.radius) / 8, 0), 1))
+        let size = bubble.isAppearing || bubble.isVanishing ? bubble.fullRadius : bubble.radius
+        return Double(min(max((24 - size) / 8, 0), 1))
     }
 }
 
