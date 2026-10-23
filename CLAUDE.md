@@ -155,8 +155,8 @@ shader's original arguments (a flat hologram registered with the flat photos, se
   glowing aqua to lime, mint rim, green aura), then the FlightElite four: Dusk (royal blue to
   violet sea, lavender land), Afterglow (peach and blush land), Midnight bloom (royal to plum
   sea), Lavender sky. In a debug build, long-press the screen (once everyone is in orbit) for the
-  next one; a capsule names it, and it's remembered (`globePalette.2`, renamed when Aurora became
-  the default). `form.x` (`flatness`) blends the map's lookup from the sphere to a flat Web
+  next one; a capsule names it, and it's remembered (`globePalette.3`; the screen's
+  `@AppStorage` fallback must be Aurora too: under `.2` it still said Dusk, so the user saw Dusk). `form.x` (`flatness`) blends the map's lookup from the sphere to a flat Web
   Mercator map at the sphere's scale at the point facing you (cos(lat0) * focal / (dist - 1)
   points per radian), for the zoom's crossfade. Its arguments must stay one image (`land-sdf`),
   four float4s and the palette (more images and it doesn't run). Compared in a mock first

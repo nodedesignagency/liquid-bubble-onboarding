@@ -84,7 +84,7 @@ struct WorldOnboardingView: View {
     /// The soft shade at the top and bottom of the city while the dome waits.
     @State private var gateShade = 0.0
 
-    @AppStorage(GlobePalette.storageKey) private var paletteName = GlobePalette.dusk.name
+    @AppStorage(GlobePalette.storageKey) private var paletteName = GlobePalette.aurora.name
     @State private var paletteNote: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

@@ -59,8 +59,10 @@ struct GlobePalette: Equatable {
                                        sheenAmount: 0.5, backlightStrength: 0.9)
 
     static let all: [GlobePalette] = [.aurora, .dusk, .afterglow, .midnight, .lavender]
-    /// Renamed when the default changed to Aurora, so a colourway picked before doesn't stick.
-    static let storageKey = "globePalette.2"
+    /// Renamed when the default changed to Aurora, so a colourway picked before doesn't stick
+    /// (`.3`: the screen's own fallback still said Dusk under `.2`). Use `GlobePalette.aurora.name`
+    /// as the fallback wherever this key is read.
+    static let storageKey = "globePalette.3"
 
     static func named(_ name: String) -> GlobePalette {
         all.first { $0.name == name } ?? .aurora
