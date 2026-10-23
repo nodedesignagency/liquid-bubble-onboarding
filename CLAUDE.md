@@ -250,6 +250,8 @@ SwiftUI gotchas learned on device:
   so it's for judging layout and motion. Keep its copy and timings in sync with
   `OnboardingStep.swift`, `WorldOnboardingView.swift` and `tools/engine/record.swift`. Pillow 12
   ignores a fill's alpha when drawing text, so `render_v3.py` draws text through a mask.
+  `PREVIEW_SCALE=1` renders v3 at half resolution, about four times faster (the video is scaled
+  to 600 wide anyway).
 
 ## Open items
 

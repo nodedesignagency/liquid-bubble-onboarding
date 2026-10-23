@@ -21,7 +21,7 @@ frames_csv, assets, fonts, out_dir = sys.argv[1:5]
 ONLY = [int(x) for x in os.environ.get("FRAMES", "").split(",") if x]
 os.makedirs(out_dir, exist_ok=True)
 holo.load(os.path.join(assets, "land-sdf.imageset/land-sdf.png"))
-S, W, H, FPS = 2, 402, 874, 30
+S, W, H, FPS = int(os.environ.get("PREVIEW_SCALE", "2")), 402, 874, 30
 SCALE = min(W / 372, H / 480, 1.3)
 CANVAS = np.array([0x04, 0x04, 0x06], float) / 255                  # Theme.worldCanvas
 INK, INK2 = (0xF5, 0xF5, 0xF7), (0x8E, 0x8E, 0x93)                  # Theme.worldInk, worldInkSecondary
@@ -194,9 +194,14 @@ for fi in sorted(rows):
         rgb = rgb + (rim * 0.14)[..., None]
     # the globe
     if g is not None:
-        grgb, ga = holo.globe(PX, PY, g["cx"], g["cy"], g["radius"], g["dist"], g["lat"], g["lon"], roll=g["roll"],
-                              glow=g["glow"], opacity=g["opacity"] if standin != "snapshots" else 1.0, time=t)
-        rgb = grgb + rgb * (1 - ga[..., None])
+        # Only where the globe and its aura reach (the aura is gone by three radii out).
+        reach = g["radius"] * 3
+        x0 = max(int((g["cx"] - reach) * S), 0); x1 = min(int((g["cx"] + reach) * S) + 1, W * S)
+        y0 = max(int((g["cy"] - reach) * S), 0); y1 = min(int((g["cy"] + reach) * S) + 1, H * S)
+        if x1 > x0 and y1 > y0:
+            grgb, ga = holo.globe(PX[y0:y1, x0:x1], PY[y0:y1, x0:x1], g["cx"], g["cy"], g["radius"], g["dist"], g["lat"], g["lon"],
+                                  roll=g["roll"], glow=g["glow"], opacity=g["opacity"] if standin != "snapshots" else 1.0, time=t)
+            rgb[y0:y1, x0:x1] = grgb + rgb[y0:y1, x0:x1] * (1 - ga[..., None])
     img = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
     if standin == "city":
         cover = fade(t, 0, V3_COVER) if t < V3_ZOOM else 1.0
