@@ -18,12 +18,14 @@ if [[ ! -f $FONTS/nunito-700.ttf ]]; then
     | while read -r weight url; do curl -sS -o "$FONTS/nunito-$weight.ttf" "$url"; done
 fi
 
-# VERSION=v2 tools/preview/run.sh renders v2 (default v1).
+# VERSION=v2 or VERSION=v3 tools/preview/run.sh renders that version (default v1).
 VERSION="${VERSION:-v1}"
-SUFFIX=$([[ $VERSION == v2 ]] && echo "-v2" || echo "")
+SUFFIX=$([[ $VERSION == v1 ]] && echo "" || echo "-$VERSION")
 rm -rf "$OUT/frames"
 if [[ $VERSION == v2 ]]; then
   python3 tools/preview/render_v2.py build/engine/frames-v2.csv Orbit/Assets.xcassets "$FONTS" "$OUT/frames"
+elif [[ $VERSION == v3 ]]; then
+  python3 tools/preview/render_v3.py build/engine/frames-v3.csv Orbit/Assets.xcassets "$FONTS" "$OUT/frames"
 else
   python3 tools/preview/render.py build/engine/frames.csv build/engine/threads.csv Orbit/Assets.xcassets "$FONTS" "$OUT/frames"
 fi

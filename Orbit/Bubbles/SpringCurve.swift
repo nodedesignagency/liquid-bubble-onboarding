@@ -24,6 +24,10 @@ struct SpringCurve {
     static let budBouncy = SpringCurve(response: 1.0, dampingRatio: 0.66)
     /// v2: swelling with a bounce, like the reference's bloom.
     static let inflateBouncy = SpringCurve(response: 0.75, dampingRatio: 0.58)
+    /// A big change of size on a `jelly` bubble (v2's Earth shrinking from the dome to its orb and
+    /// back): a 10% bounce on a radius that changes by 190pt dipped Earth almost to nothing before
+    /// it popped back. This settles with a hint of give instead.
+    static let swell = SpringCurve(response: 0.7, dampingRatio: 0.82)
     /// v2: Earth settling back after the finger lets go, with a little give.
     static let liftSettle = SpringCurve(response: 0.6, dampingRatio: 0.72)
     /// Pulls a bubble back into its parent.

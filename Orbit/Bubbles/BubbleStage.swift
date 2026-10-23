@@ -26,6 +26,9 @@ enum StageLook {
     case v1
     /// No background liquid: the glass orbs are the liquid themselves (`GlassLiquidLayer`).
     case v2
+    /// One crisp body of flat, pale liquid with sharp photo discs in it (`FlatLiquidLayer`). Earth
+    /// itself is drawn by the screen (the live map), over the stage.
+    case v3
 }
 
 /// The liquid bubble animation. Change `scene` and the bubbles flow into the new arrangement.
@@ -41,14 +44,37 @@ struct BubbleStage: View {
     var lift: EarthLift? = nil
     /// v2: drawn into the glass layer over the photos, so glass passing over it bends it.
     var backdrop: AnyView? = nil
+    /// v3: the finger spinning everyone around Earth.
+    var spin: SpinDial? = nil
+    /// Starts on `scene` already settled instead of animating into it: v2's dome is simply there
+    /// at launch (it used to swell out of the middle of the screen and bounce down), and v3's
+    /// Earth waits at its own place, so its pool swells out from under the globe.
+    var startsSettled = false
 
-    @State private var engine = BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
+    @State private var engine: BubbleEngine
     @State private var sequence: Task<Void, Never>? = nil
     @State private var popHaptics: Task<Void, Never>? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(PhotoStyle.storageKey) private var photoStyle = PhotoStyle.glass.rawValue
 
     private let people = Person.samples
+
+    init(scene: OrbitScene, slot: CGRect? = nil, look: StageLook = .v1, lift: EarthLift? = nil,
+         backdrop: AnyView? = nil, spin: SpinDial? = nil, startsSettled: Bool = false) {
+        self.scene = scene
+        self.slot = slot
+        self.look = look
+        self.lift = lift
+        self.backdrop = backdrop
+        self.spin = spin
+        self.startsSettled = startsSettled
+        let engine = BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
+        if startsSettled, let first = OrbitChoreography.keyframes(for: scene).first {
+            // Started long ago, so every spring has come to rest.
+            engine.transition(to: first.layout, at: Date.timeIntervalSinceReferenceDate - 60)
+        }
+        _engine = State(initialValue: engine)
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -63,13 +89,25 @@ struct BubbleStage: View {
                 let earlier = look == .v2 ? lifted(engine.snapshot(at: time - Self.velocityStep), at: time - Self.velocityStep,
                                                    scale: metrics.scale) : []
                 ZStack {
-                    if look == .v2 {
+                    switch look {
+                    case .v1:
+                        GooLayer(bubbles: bubbles, threads: engine.threads(at: time), metrics: metrics)
+                    case .v2:
                         GlassLiquidLayer(bubbles: bubbles, velocities: velocities(bubbles, earlier, scale: metrics.scale),
                                          metrics: metrics, size: proxy.size, backdrop: backdrop)
-                    } else {
-                        GooLayer(bubbles: bubbles, threads: engine.threads(at: time), metrics: metrics)
+                    case .v3:
+                        let turned = turnedBySpin(bubbles, at: time)
+                        FlatLiquidLayer(bubbles: turned, metrics: metrics)
+                        ForEach(turned.filter { WorldPhoto.hasPhoto($0.id) && WorldPhoto.radius(for: $0) > 0.25 }) { bubble in
+                            let diameter = WorldPhoto.radius(for: bubble) * 2 * metrics.scale
+                            WorldDisc(image: WorldPhoto.image(for: bubble.id), diameter: diameter)
+                                .position(metrics.point(bubble.center))
+                                // Bigger on top, so a bud's photo stays tucked under its parent's
+                                // until it has swollen out; melting away, it slips underneath.
+                                .zIndex(bubble.isLeaving ? -1000 + bubble.depth : bubble.depth)
+                        }
                     }
-                    ForEach(look == .v2 ? [] : bubbles) { bubble in
+                    ForEach(look == .v1 ? bubbles : []) { bubble in
                         // Drawn at its real size (not scaled), so the photo is resampled once and the
                         // glass shader works in screen points.
                         let diameter = max(bubble.radius * 2 * metrics.scale, 1)
@@ -104,7 +142,10 @@ struct BubbleStage: View {
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onAppear { play(scene) }
+        .onAppear {
+            // A settled start already has its first layout (see `init`).
+            if !startsSettled { play(scene) }
+        }
         .onChange(of: scene) { _, newScene in play(newScene) }
         .onDisappear {
             sequence?.cancel()
@@ -120,6 +161,22 @@ struct BubbleStage: View {
             guard before.indices.contains(i) else { return .zero }
             return CGVector(dx: (now[i].center.x - before[i].center.x) * scale / Self.velocityStep,
                             dy: (now[i].center.y - before[i].center.y) * scale / Self.velocityStep)
+        }
+    }
+
+    /// v3: everyone but Earth turned around Earth by the spin. Photos stay upright: only their
+    /// places turn.
+    private func turnedBySpin(_ bubbles: [RenderedBubble], at time: Double) -> [RenderedBubble] {
+        guard let spin else { return bubbles }
+        let angle = spin.angle(at: time)
+        guard angle != 0 else { return bubbles }
+        let pivot = OrbitChoreography.bloomEarth.center
+        return bubbles.map { bubble in
+            guard bubble.id != OrbitChoreography.earth else { return bubble }
+            var out = bubble
+            let around = CGPoint(x: bubble.center.x - pivot.x, y: bubble.center.y - pivot.y).rotated(by: angle)
+            out.center = CGPoint(x: around.x + pivot.x, y: around.y + pivot.y)
+            return out
         }
     }
 
@@ -246,6 +303,26 @@ private struct GooLayer: View {
                     Float(tint.red), Float(tint.green), Float(tint.blue)]
         }
         return out
+    }
+}
+
+/// v3: a photo as a sharp disc. Drawn at its real size each frame, so it stays crisp as it pops.
+private struct WorldDisc: View {
+    let image: UIImage?
+    let diameter: CGFloat
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Theme.worldLiquid
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .clipShape(Circle())
     }
 }
 

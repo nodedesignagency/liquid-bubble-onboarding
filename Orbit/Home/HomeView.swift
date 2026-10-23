@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Placeholder for the real app: it keeps the last scene of the onboarding that just played
-/// running, and lets you replay either onboarding.
+/// running, and lets you replay any onboarding.
 struct HomeView: View {
-    var version: OnboardingVersion = .v2
+    var version: OnboardingVersion = .v3
     var onReplay: (OnboardingVersion) -> Void
 
     var body: some View {
@@ -30,6 +30,18 @@ struct HomeView: View {
                     replay
                 }
                 .padding(.top, 220)
+            }
+        case .v3:
+            // Earth in its glass orb with everyone around it, as the onboarding left it. Spin it.
+            ZStack {
+                WorldOnboardingView(mode: .home)
+                VStack(spacing: 0) {
+                    Spacer()
+                    title
+                    Spacer()
+                    replay
+                }
+                .padding(.top, 330)
             }
         }
     }

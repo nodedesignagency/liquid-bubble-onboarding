@@ -18,6 +18,12 @@ enum Theme {
     /// against. Also passed to the glass shader as what clear glass looks through to.
     static let glassCanvas = Color(hex: 0xEDEDEF)
     static let glassCanvasRGB = (r: Float(0xED) / 255, g: Float(0xED) / 255, b: Float(0xEF) / 255)
+
+    /// v3: a white page, and one pale, cool grey liquid on it, flat like the pentagon in the
+    /// Yandex Music concept the user circled. The photos and Earth are the only colour.
+    static let worldCanvas = Color.white
+    static let worldLiquid = Color(hex: 0xEEEEF1)
+    static let worldLiquidRGB = (r: Float(0xEE) / 255, g: Float(0xEE) / 255, b: Float(0xF1) / 255)
 }
 
 extension Color {

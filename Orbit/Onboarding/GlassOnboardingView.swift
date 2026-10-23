@@ -35,7 +35,9 @@ struct GlassOnboardingView: View {
                     scene: phase == .revealed ? .reveal : .gate,
                     look: .v2,
                     lift: lift,
-                    backdrop: AnyView(headline(in: full.size))
+                    backdrop: AnyView(headline(in: full.size)),
+                    // The dome is simply there at launch, instead of swelling out of the middle.
+                    startsSettled: true
                 )
             }
             .ignoresSafeArea()

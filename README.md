@@ -1,9 +1,20 @@
 # Orbit: liquid bubble onboarding
 
-A SwiftUI onboarding for **Orbit**, a friend-circle app, told in liquid bubbles. There are two
-versions; the home screen at the end lets you replay either.
+A SwiftUI onboarding for **Orbit**, a friend-circle app, told in liquid bubbles. There are three
+versions; the home screen at the end lets you replay any of them.
 
-**v2** (the default) is one screen, in the style of the Wabi app:
+**v3** (the default) is one screen that starts in the real world:
+
+1. It opens on Paris in 3D satellite view (Apple's map, through MapKit) and pulls back through the
+   sky to the whole Earth in space: "Everyone you love, in one orbit."
+2. The black of space falls away and the globe shrinks into a small glass orb on a white page.
+3. Your friends pop out of it in one crisp body of flat, pale liquid: five first, in a pentagon,
+   then more out of them, and drops at the tips that keep pinching off and melting back. Drag
+   around Earth to spin everyone, the globe with them.
+4. "Meet Orbit." comes in under it, with two buttons. "Continue" melts everyone back into Earth
+   and dives back into the city, so a recording loops.
+
+**v2** is one screen in the style of the Wabi app:
 
 1. Earth waits as a big glass dome rising from the bottom edge, under "Everyone you love, in one
    orbit." Swipe up and it follows your finger.
@@ -31,10 +42,20 @@ Needs Xcode 16 or later. There are no dependencies.
 ```
 
 Or open `Orbit.xcodeproj`, choose an iPhone simulator and press ⌘R. Onboarding plays on every
-launch, and "Replay v1" or "Replay v2" on the last screen plays that version.
+launch, and "Replay v1", "Replay v2" or "Replay v3" on the last screen plays that version. v3's map
+needs a network connection the first time (MapKit downloads the imagery).
 
 ## How the liquid works
 
+- **v3 flat liquid** (`Bubbles/FlatLiquid.swift`, the `flatLiquid` shader in `Bubbles/Liquid.metal`):
+  every photo, drop and Earth's pool is a circle; their signed distances are joined with a smooth
+  minimum, so neighbours share one crisp outline with wide, soft fillets, and a bud swells out of
+  its parent's edge with a neck that thins and pinches off. No blur. The fill is flat, darkened a
+  touch just inside the edge. Photos are sharp discs that pop in once their liquid has swollen.
+- **v3 Earth** (`Bubbles/EarthZoom.swift`): a live MapKit map with realistic elevation, zoomed by a
+  keyframe animation that is even in log space, so rooftops to orbit keep one sense of speed. Once
+  it reaches space the app finds the globe on screen (from where two known points land), cuts the
+  map to it and scales it into the orb, where real Liquid Glass (iOS 26) sits on top.
 - **v2 glass** (`Bubbles/GlassLiquid.swift`, the `glassLiquid` shader in `Bubbles/Liquid.metal`):
   the photos and the headline are drawn flat into one layer, and the shader turns it into glass.
   The orbs are joined with a smooth union, so close ones melt into one shape with a neck of clear
@@ -73,14 +94,17 @@ spin. Each bud plays a soft haptic as it lets go of its parent.
 - **Copy**: `Onboarding/OnboardingStep.swift` (title, subtitle and scene per page).
 - **Colors**: `Theme/Theme.swift` (the liquid's lilac, butter and sky washes; mirror them in `GooTint`).
 - **Photos**: replace `friend-1` (you) … `friend-9` in `Assets.xcassets`. A missing photo falls back
-  to initials.
+  to initials. v3 also shows `place-1` … `place-5`.
+- **v3's city**: `EarthZoom.city` and `EarthZoom.street` (other good Flyover cities are listed there).
 
 ## Checking changes without Xcode
 
 `SWIFTC=/path/to/swiftc tools/engine/run.sh` tests the animation engine with any Swift toolchain
-(Linux included) and records a run; `tools/preview/run.sh` renders that run into a preview video.
+(Linux included) and records a run; `tools/preview/run.sh` renders that run into a preview video
+(`VERSION=v2` or `VERSION=v3` for the others). v3's preview can't draw the map: it stands in for
+the zoom with the Earth photo, labelled.
 
 ## Credits
 
-- Earth: NASA Goddard Space Flight Center, "Blue Marble" (public domain).
+- Earth: NASA Goddard Space Flight Center, "Blue Marble" (public domain). v3's map: Apple Maps, via MapKit.
 - Photos: [Unsplash](https://unsplash.com/license), free to use under the Unsplash License.

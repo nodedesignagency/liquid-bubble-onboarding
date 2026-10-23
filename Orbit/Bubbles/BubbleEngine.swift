@@ -103,6 +103,10 @@ struct RenderedBubble: Identifiable {
     var depth: Double
     /// Melting back into its anchor, so it should slip underneath whoever swallows it.
     var isLeaving = false
+    /// The bubble's size before or after its current change, whichever is bigger, without bounce
+    /// or breathing: its full size while it appears, settles or melts away. v3 pops each photo in
+    /// once its liquid has swollen to part of this.
+    var fullRadius: CGFloat = 0
 }
 
 struct RenderedThread {
@@ -226,8 +230,13 @@ final class BubbleEngine {
                 track.grow = .deflate
             } else if target.jelly {
                 track.move = .jelly
-                // Swell or shrink with the same bounce, unless it is only gliding.
-                if abs(target.radius - current[id].radius) > 1 { track.grow = .inflateBouncy }
+                // Swell or shrink with the same bounce, unless it is only gliding. A big change of
+                // size (more than 40%) settles gently instead: the same bounce on Earth going from
+                // v2's dome to its orb dipped it almost to nothing.
+                let change = abs(target.radius - current[id].radius)
+                if change > 1 {
+                    track.grow = change > 0.4 * max(target.radius, current[id].radius) ? .swell : .inflateBouncy
+                }
             }
 
             if reduceMotion {
@@ -276,7 +285,8 @@ final class BubbleEngine {
             }
             return RenderedBubble(id: id, center: center, radius: radius, tint: pose.tint,
                                   depth: Double(pose.radius) + Double(id) * 0.001,
-                                  isLeaving: tracks[id].to.radius < 1 && tracks[id].toAnchor != nil)
+                                  isLeaving: tracks[id].to.radius < 1 && tracks[id].toAnchor != nil,
+                                  fullRadius: max(tracks[id].from.radius, tracks[id].to.radius))
         }
     }
 

@@ -6,7 +6,17 @@ import CoreGraphics
 /// v1 (the first story, lilac liquid): `you`, `bump`, `circle`, `world`, then `collapse`.
 /// v2 (one screen, glass orbs that are the liquid themselves, no threads): `gate`, swipe up,
 /// `reveal`, and after "Continue" back to `gate`, so a recording loops.
+/// v3 (pull back from a city to the whole Earth, then friends pop out of it in flat liquid):
+/// `space` while the map zooms out, `bloom`, and `space` again after "Continue".
 enum OrbitScene: Hashable {
+    // MARK: v3
+
+    /// Nothing on the stage: the map has the screen (zooming out from a city to the whole Earth),
+    /// and everyone waits inside Earth for `bloom`. After "Continue" everyone melts back into Earth.
+    case space
+    /// Earth sits in a pool of liquid; five friends pop out of it, then more pop out of them.
+    case bloom
+
     // MARK: v2
 
     /// The gate: Earth as a big glass dome rising from the bottom edge, everyone still inside it.
@@ -40,13 +50,15 @@ struct Keyframe {
 ///
 /// Bubble 0 is Earth, 1 is you, 2 is the friend you bump, 3...5 are your friends, 6...8 are
 /// theirs and 9 is one more for the ring. v2 also uses 10...15, small clear glass droplets with no
-/// photo. Coordinates are in the stage's
+/// photo; v3 uses them as small drops of liquid, and 16...20 as places. Coordinates are in the stage's
 /// 372 x 480 reference space, centered on the middle of the stage (v2's stage is the whole screen,
 /// so its coordinates reach about 400 above and below the centre).
 enum OrbitChoreography {
-    static let bubbleCount = 16
-    /// v2: photo-less glass droplets.
+    static let bubbleCount = 21
+    /// v2: photo-less glass droplets. v3: small drops of liquid.
     static let droplets = 10...15
+    /// v3: places your friends have been (`place-1` to `place-5`).
+    static let places = 16...20
 
     static func hasPhoto(_ id: Int) -> Bool { id >= 0 && id <= 9 }
     static let earth = 0
@@ -62,7 +74,102 @@ enum OrbitChoreography {
         case .collapse: [Keyframe(after: 0, layout: collapse)]
         case .gate: [Keyframe(after: 0, layout: gate)]
         case .reveal: [Keyframe(after: 0, layout: reveal)]
+        case .space: [Keyframe(after: 0, layout: space)]
+        case .bloom: [Keyframe(after: 0, layout: bloom)]
         }
+    }
+
+    // MARK: v3 scenes
+
+    /// Where Earth sits once the map has shrunk into it: the middle of its pool of liquid. `radius`
+    /// is the pool's edge; the globe itself (`globeRadius`) sits inside it, leaving a rim of liquid.
+    static let bloomEarth = (center: CGPoint(x: 0, y: -125), radius: CGFloat(55))
+    static let globeRadius: CGFloat = 46
+    /// v3: how far each photo's liquid reaches past the photo, as a fraction of its radius.
+    static let photoMargin: CGFloat = 0.26
+
+    /// One bubble of v3's bloom: where it lives around Earth (angle in degrees, 0 to the right and
+    /// clockwise; distance from Earth's centre), its size, who it pops out of, and when.
+    private struct Petal {
+        let id: Int
+        let angle: Double
+        let distance: CGFloat
+        let radius: CGFloat
+        let parent: Int
+        let delay: Double
+        /// How far it bobs around its home, so its neck keeps breathing.
+        let bob: CGFloat
+    }
+
+    /// The bloom, in the order it pops out: five friends around Earth (a pentagon, like the
+    /// reference the user circled), then a ring in the valleys between them and a few further out
+    /// along their axes, each out of the friend next to it, then small drops at the tips.
+    private static let petals: [Petal] = {
+        var petals: [Petal] = []
+        let ring1 = [1, 2, 3, 4, 5]
+        for (k, id) in ring1.enumerated() {
+            petals.append(Petal(id: id, angle: -90 + 72 * Double(k), distance: 94, radius: 34,
+                                parent: earth, delay: 0.25 + 0.1 * Double(k), bob: 3))
+        }
+        // In the valleys, each out of the friend just before it (clockwise).
+        let ring2 = [16, 6, 17, 7, 18]
+        for (k, id) in ring2.enumerated() {
+            petals.append(Petal(id: id, angle: -54 + 72 * Double(k), distance: 140, radius: 22,
+                                parent: ring1[k], delay: 0.95 + 0.09 * Double(k), bob: 4))
+        }
+        // Further out along four of the five friends' axes. The empty one, bottom right, keeps the
+        // bloom from reading as a wheel.
+        let ring3: [(Int, Int)] = [(0, 19), (1, 8), (3, 20), (4, 9)]
+        for (n, (k, id)) in ring3.enumerated() {
+            petals.append(Petal(id: id, angle: -90 + 72 * Double(k), distance: 170, radius: 18,
+                                parent: ring1[k], delay: 1.3 + 0.09 * Double(n), bob: 4))
+        }
+        // Drops of liquid with no photo at the tips: (id, angle, distance, radius, parent). A few
+        // degrees off their parent's axis, about as far out as a neck can reach, so they hang on,
+        // pinch off and melt back as everyone bobs.
+        let drops: [(Int, Double, CGFloat, CGFloat, Int)] = [
+            (10, -62, 188, 6, 16), (11, 26, 188, 5, 6), (12, 170, 188, 7, 7),
+            (13, 226, 188, 5, 18), (14, -82, 210, 6, 19), (15, 134, 210, 5, 20),
+        ]
+        for (n, drop) in drops.enumerated() {
+            petals.append(Petal(id: drop.0, angle: drop.1, distance: drop.2, radius: drop.3,
+                                parent: drop.4, delay: 1.75 + 0.1 * Double(n), bob: 7))
+        }
+        return petals
+    }()
+
+    /// Everyone tucked inside the bubble they pop out of; Earth hidden at its own place, so its
+    /// pool swells out from under the globe instead of sliding in. Melting back after "Continue",
+    /// the outer ones go first, then the friends, then Earth's pool drains under the globe.
+    private static var space: BubbleLayout {
+        var targets = (0..<bubbleCount).map { _ in BubbleTarget(anchor: earth) }
+        targets[earth] = BubbleTarget(center: bloomEarth.center, moveDelay: 0.75)
+        for petal in petals {
+            targets[petal.id] = BubbleTarget(anchor: petal.parent, moveDelay: petal.parent == earth ? 0.3 : 0)
+        }
+        return BubbleLayout(targets: targets)
+    }
+
+    private static var bloom: BubbleLayout {
+        var targets = space.targets
+        targets[earth] = BubbleTarget(center: bloomEarth.center, radius: bloomEarth.radius)
+        for (order, petal) in petals.enumerated() {
+            let radians = petal.angle * .pi / 180
+            let home = CGPoint(x: bloomEarth.center.x + petal.distance * CGFloat(cos(radians)),
+                               y: bloomEarth.center.y + petal.distance * CGFloat(sin(radians)))
+            let phase = Double(order) * 2.1
+            targets[petal.id] = BubbleTarget(
+                center: CGPoint(x: home.x + petal.bob * CGFloat(cos(phase)), y: home.y + petal.bob * CGFloat(sin(phase))),
+                radius: petal.radius,
+                anchor: petal.parent,
+                appearDelay: petal.delay,
+                jelly: true,
+                orbitRate: order.isMultiple(of: 2) ? 0.55 : -0.47,
+                orbitCenter: home,
+                budsFromSurface: true
+            )
+        }
+        return BubbleLayout(targets: targets)
     }
 
     // MARK: v2 scenes

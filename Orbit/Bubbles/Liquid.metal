@@ -224,3 +224,37 @@ static float orbHeight(float2 d, float r, float2 stretch, thread float2 &toward)
     const float4 inside = float4(c, 1.0);
     return half4(mix(outside, inside, alpha));
 }
+
+/// v3: one crisp body of flat, pale liquid (used through `.colorEffect` in `FlatLiquidLayer`).
+///
+/// Every photo, drop and Earth's pool is a circle; their signed distances are joined with a
+/// smooth minimum (`blend`, in points), so neighbours closer than about half of it share one
+/// outline with soft, wide fillets between them, and a bubble drifting away pulls a neck that
+/// thins and pinches off cleanly. No blur: the edge is antialiased over about half a point.
+/// Inside, the colour is flat (`fill`), darkened a touch just inside the edge (`rim`, 0 for
+/// none), so the shape reads as a moulded surface like the user's flow-diagram references,
+/// without anything outside it that could read as a drop shadow.
+///
+/// `circles` holds 3 floats per circle: x, y, radius, in the view's points. Mirrored in
+/// `tools/preview/render_v3.py` (`flat_liquid`).
+[[ stitchable ]] half4 flatLiquid(float2 position, half4 color, float blend, float rim, float3 fill,
+                                  device const float *circles, int count) {
+    const int n = count / 3;
+    if (n == 0) {
+        return half4(0.0h);
+    }
+    float d = 1e20;
+    for (int i = 0; i < n; i++) {
+        device const float *c = circles + i * 3;
+        const float di = distance(position, float2(c[0], c[1])) - c[2];
+        const float h = clamp(0.5 + 0.5 * (di - d) / blend, 0.0, 1.0);
+        d = mix(di, d, h) - blend * h * (1.0 - h);
+    }
+    const float alpha = clamp(0.5 - d / 0.6, 0.0, 1.0);
+    if (alpha <= 0.0) {
+        return half4(0.0h);
+    }
+    const float inner = max(-d, 0.0);
+    const float3 c = fill * (1.0 - rim * 0.06 * exp(-inner / 1.6));
+    return half4(half3(c * alpha), half(alpha));
+}

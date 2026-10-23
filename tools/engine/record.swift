@@ -1,18 +1,24 @@
 import Foundation
 // Records a scripted run through onboarding (bubbles and threads) for the preview renderer.
-// Usage: record <frames.csv> <threads.csv> [v1|v2]
-// Keep the timings in sync with `tools/preview/render.py` (STEPS_V1, and V2_* for v2).
+// Usage: record <frames.csv> <threads.csv> [v1|v2|v3]
+// Keep the timings in sync with `tools/preview/render.py` (STEPS_V1), `render_v2.py` (V2_*) and
+// `render_v3.py` (V3_*, which mirror `WorldOnboardingView`).
 let version = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "v1"
-let script: [(Double, OrbitScene)] = version == "v2"
-    // v2: the finger lifts Earth from 0.9 s and lets go at 2.2 s (the lift itself is replayed by
-    // render.py); "Continue" at 10 s.
-    ? [(0, .gate), (2.2, .reveal), (10.0, .gate)]
-    : [(0, .you), (3.0, .bump), (6.8, .circle), (10.6, .world), (15.0, .collapse)]
-let end = version == "v2" ? 12.6 : 16.6, fps = 30.0
+let script: [(Double, OrbitScene)]
+switch version {
+// v2: the finger lifts Earth from 0.9 s and lets go at 2.2 s (the lift itself is replayed by
+// render.py); "Continue" at 10 s.
+case "v2": script = [(0, .gate), (2.2, .reveal), (10.0, .gate)]
+// v3: the map zooms out and shrinks into Earth until 7.2 s (render_v3.py fakes that part), the
+// bloom starts then; "Continue" at 15 s.
+case "v3": script = [(0, .space), (7.2, .bloom), (15.0, .space)]
+default: script = [(0, .you), (3.0, .bump), (6.8, .circle), (10.6, .world), (15.0, .collapse)]
+}
+let end = version == "v1" ? 16.6 : version == "v2" ? 12.6 : 21.8, fps = 30.0
 let engine = BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
 var pending: [(Double, BubbleLayout)] = []
 var next = 0
-var out = "frame,id,x,y,r,tr,tg,tb,depth,leaving,vx,vy\n"
+var out = "frame,id,x,y,r,tr,tg,tb,depth,leaving,vx,vy,full\n"
 var threadsOut = "frame,a,b,strength\n"
 for f in 0..<Int(end * fps) {
     let t = Double(f) / fps
@@ -21,14 +27,16 @@ for f in 0..<Int(end * fps) {
         next += 1
     }
     while let first = pending.first, first.0 <= t {
-        _ = engine.transition(to: first.1, at: first.0)
+        // v2 and v3 open on their first scene already settled (BubbleStage's `startsSettled`).
+        let settled = version != "v1" && first.0 == 0
+        _ = engine.transition(to: first.1, at: settled ? -60 : first.0)
         pending.removeFirst()
     }
     // Velocity (reference points per second) the way BubbleStage measures it: from 1/120 s earlier.
     let earlier = engine.snapshot(at: t - 1.0 / 120)
     for b in engine.snapshot(at: t) {
         let vx = (b.center.x - earlier[b.id].center.x) * 120, vy = (b.center.y - earlier[b.id].center.y) * 120
-        out += "\(f),\(b.id),\(b.center.x),\(b.center.y),\(b.radius),\(b.tint.red),\(b.tint.green),\(b.tint.blue),\(b.depth),\(b.isLeaving ? 1 : 0),\(vx),\(vy)\n"
+        out += "\(f),\(b.id),\(b.center.x),\(b.center.y),\(b.radius),\(b.tint.red),\(b.tint.green),\(b.tint.blue),\(b.depth),\(b.isLeaving ? 1 : 0),\(vx),\(vy),\(b.fullRadius)\n"
     }
     for th in engine.threads(at: t) { threadsOut += "\(f),\(th.a),\(th.b),\(th.strength)\n" }
 }
