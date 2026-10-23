@@ -6,7 +6,8 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
 ## Working with the user
 
 - Keep working on branch `claude/nice-cori-ypokiu`: commit and push every change there.
-- **End every reply that changes code with this exact command**, so the user can pull and run:
+- **End every reply with this exact command** (the user asked for it every time, even when
+  nothing changed), so they can pull and run:
 
   ```sh
   cd ~/liquid-bubble-onboarding && git pull && ./scripts/run.sh
@@ -132,7 +133,10 @@ edges, but wanted an original story, which is the current one.
   strength spring) and optional labels.
 - `Orbit/Bubbles/OrbitChoreography.swift`: the layouts per scene, as keyframes, in a 372 x 480
   reference space centered on the stage. Bubble 0 is Earth, 1 you, 2 the friend you bump, 3-5
-  your friends, 6-8 theirs, 9 one more for the ring.
+  your friends, 6-8 theirs, 9 one more for the ring; v2 adds 10-15, photo-less glass droplets.
+- `Orbit/Bubbles/GlassLiquid.swift`: v2's `GlassLiquidLayer` (photo layer, velocities, stretch),
+  `EarthLift` (the swipe), `GlassPhoto` (photos at 95% of the orb, glow colours).
+- `Orbit/Onboarding/GlassOnboardingView.swift`: the v2 screen, its copy, and `GlassButton`.
 - `Orbit/Bubbles/BubbleStage.swift`: the view. `GooLayer` draws the liquid with the `liquid` Metal
   shader (`Orbit/Bubbles/Liquid.metal`) through `.colorEffect`: discs and capsules with soft
   shoulders summed into one field, cut at 0.5 over a short ramp; the preview tool mirrors the same
@@ -156,7 +160,8 @@ SwiftUI gotchas learned on device:
   breathing, id as tie-break). Ordering by the breathing radius made equal photos that overlapped
   swap places every second or so (the user saw it as "z-index shifting").
 - The shader can't be compiled in a cloud session (no Metal toolchain). Keep `Liquid.metal` simple
-  and standard, and mirror any change in `tools/preview/render.py` (`shoulder`) so the preview stays
+  and standard, and mirror any change in the preview tool (`render.py` for v1's `liquid` and
+  `glassOrb`, `render_v2.py` for `glassLiquid`) so the preview stays
   truthful.
 
 ## Verifying without Xcode

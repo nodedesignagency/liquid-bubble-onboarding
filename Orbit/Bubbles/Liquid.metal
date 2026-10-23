@@ -129,7 +129,7 @@ using namespace metal;
 /// `orbs` holds 8 floats per orb: x, y, r (in the view's points), the glow colour r, g, b, and the
 /// stretch (sx, sy): the direction of motion, with length = how much longer the orb gets (0 = round).
 /// `interior` is the canvas colour, seen through clear glass. Mirrored in
-/// `tools/preview/render.py` (`glass_liquid`).
+/// `tools/preview/render_v2.py` (`glass_liquid`, `orb_height`).
 /// One orb's height (see above) at `d` from its centre, and the direction it grows in (the
 /// gradient's half, divided by r), in the metric stretched along `stretch`.
 static float orbHeight(float2 d, float r, float2 stretch, thread float2 &toward) {
