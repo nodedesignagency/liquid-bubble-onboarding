@@ -115,6 +115,10 @@ struct RenderedBubble: Identifiable {
     var isAppearing = false
     /// Shrinking to nothing, whether or not it melts into another bubble.
     var isVanishing = false
+    /// The size its current change started from and the size it is heading for, without bounce
+    /// or breathing. v3 stacks by them: whoever is heading for the middle goes on top.
+    var startRadius: CGFloat = 0
+    var targetRadius: CGFloat = 0
 }
 
 struct RenderedThread {
@@ -303,7 +307,9 @@ final class BubbleEngine {
                                   isLeaving: tracks[id].to.radius < 1 && tracks[id].toAnchor != nil,
                                   fullRadius: max(tracks[id].from.radius, tracks[id].to.radius),
                                   isAppearing: tracks[id].from.radius < 1 && tracks[id].to.radius >= 1,
-                                  isVanishing: tracks[id].from.radius >= 1 && tracks[id].to.radius < 1)
+                                  isVanishing: tracks[id].from.radius >= 1 && tracks[id].to.radius < 1,
+                                  startRadius: tracks[id].from.radius,
+                                  targetRadius: tracks[id].to.radius)
         }
     }
 

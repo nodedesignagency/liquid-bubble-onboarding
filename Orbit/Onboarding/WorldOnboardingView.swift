@@ -93,9 +93,8 @@ struct WorldOnboardingView: View {
     private static let spinTurn = 28.0
     /// How far up the finger has to lift the dome before letting go enters.
     private static let threshold: CGFloat = 90
-    /// The top of the copy, in reference points below the stage's middle: under the lowest
-    /// friend's glass (about 43) with room to spare.
-    private static let copyTop: CGFloat = 66
+    /// The gap between the copy's last line and the first button (the user asked for 20 to 24).
+    private static let copyGap: CGFloat = 22
 
     init(mode: Mode = .onboarding, onFinish: @escaping () -> Void = {}) {
         self.mode = mode
@@ -130,7 +129,6 @@ struct WorldOnboardingView: View {
                                 centerpiece: { earth in AnyView(globeLayer(earth: earth, size: size)) },
                                 engine: engine)
                     if mode == .onboarding {
-                        copy(size: size, metrics: metrics)
                         if domeVisible {
                             gate(size: size)
                         }
@@ -161,14 +159,18 @@ struct WorldOnboardingView: View {
             .ignoresSafeArea()
 
             if mode == .onboarding {
+                // The copy sits just above the buttons, which keep their place while hidden, so
+                // the copy never moves when they come in.
                 VStack(spacing: 0) {
-                    Spacer()
-                    if showFooter {
-                        footer
-                            .transition(.opacity.combined(with: .offset(y: 16)))
-                    }
+                    Spacer(minLength: 0)
+                    headlineBlock
+                        .padding(.bottom, Self.copyGap)
+                    footer
+                        .opacity(showFooter ? 1 : 0)
+                        .offset(y: showFooter ? 0 : 16)
+                        .allowsHitTesting(showFooter)
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 20)
                 .padding(.bottom, 8)
             }
 
@@ -277,6 +279,10 @@ struct WorldOnboardingView: View {
             let metrics = StageMetrics(slot: CGRect(origin: .zero, size: size))
             state.center = metrics.point(earth.center)
             state.radius = WorldPhoto.globeRadius(for: earth) * metrics.scale
+            // The aura belongs to the middle: it fades as Earth shrinks away to its corner, while
+            // the friend taking the middle gets a glow of their own (`HubGlow`).
+            let glass = earth.isAppearing || earth.isVanishing ? earth.fullRadius : earth.radius
+            state.glow *= Double(min(max((glass - 30) / 50, 0), 1))
         }
         state.longitude = turnedLongitude(state.longitude, at: t)
         return state
@@ -335,7 +341,7 @@ struct WorldOnboardingView: View {
         }
     }
 
-    /// The handle's lift: up 4 points and back over 0.8 s, then a rest, every 2.4 s.
+    /// The arrow's lift: up 4 points and back over 0.8 s, then a rest, every 2.4 s.
     private static func nudge(at t: Double) -> CGFloat {
         let phase = t.truncatingRemainder(dividingBy: 2.4) / 0.8
         return phase < 1 ? CGFloat(sin(.pi * phase)) * 4 : 0
@@ -348,14 +354,14 @@ struct WorldOnboardingView: View {
         return ZoomPath.ease((t - shownAt - 0.5) / 0.6)
     }
 
-    /// Like Wabi's gate: quiet words on the glass itself, under a soft rounded handle (no arrow)
-    /// that lifts a little every couple of seconds, like a sheet you can pull up.
+    /// Like Wabi's gate: quiet words on the glass itself, under a thin up arrow with rounded ends
+    /// (the user's pick) that lifts a little every couple of seconds.
     private func hint(nudge: CGFloat) -> some View {
         Button(action: passGate) {
-            VStack(spacing: 11) {
-                Capsule()
-                    .fill(Color.white.opacity(0.75))
-                    .frame(width: 36, height: 5)
+            VStack(spacing: 9) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(Color.white.opacity(0.8))
                     .offset(y: -nudge)
                 Text("Swipe up to enter")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -388,35 +394,34 @@ struct WorldOnboardingView: View {
 
     // MARK: Copy
 
-    private func copy(size: CGSize, metrics: StageMetrics) -> some View {
-        let top = size.height / 2 + Self.copyTop * metrics.scale
-        return Color.clear
-            .frame(width: size.width, height: 0)
-            .overlay(alignment: .top) {
-                ZStack(alignment: .top) {
-                    if let headline {
-                        HeadlineView(title: headline.title, subtitle: headline.subtitle)
-                            .id(headline)
-                            .transition(.asymmetric(
-                                insertion: .identity,
-                                removal: .modifier(active: Soften(amount: 1), identity: Soften(amount: 0))
-                                    .animation(.smooth(duration: 0.35))
-                            ))
-                    }
-                }
+    /// The headline, its last line `copyGap` above the buttons. Old and new share the bottom line,
+    /// so one fades out as the next eases in over the same place.
+    private var headlineBlock: some View {
+        ZStack(alignment: .bottom) {
+            if let headline {
+                HeadlineView(title: headline.title, subtitle: headline.subtitle)
+                    .id(headline)
+                    .transition(.asymmetric(
+                        insertion: .identity,
+                        removal: .modifier(active: Soften(amount: 1), identity: Soften(amount: 0))
+                            .animation(.smooth(duration: 0.35))
+                    ))
             }
-            .position(x: size.width / 2, y: top)
-            .allowsHitTesting(false)
+        }
+        .frame(maxWidth: .infinity)
+        .allowsHitTesting(false)
     }
 
     private func show(_ next: Headline?) {
         withAnimation(.smooth(duration: 0.35)) { headline = next }
     }
 
+    /// Apple in white, Google in Liquid Glass, sized like the user's reference: about 0.14 as tall
+    /// as wide, a quarter of that between them, the mark pinned left and the words centred.
     private var footer: some View {
-        VStack(spacing: 12) {
-            WorldButton(title: "Continue with Apple", systemImage: "apple.logo", prominent: true, action: finish)
-            WorldButton(title: "Continue with phone number", systemImage: "phone.fill", prominent: false, action: finish)
+        VStack(spacing: 13) {
+            WorldButton(title: "Continue with Apple", icon: .symbol("apple.logo"), prominent: true, action: finish)
+            WorldButton(title: "Continue with Google", icon: .asset("google-g"), prominent: false, action: finish)
             Text("By continuing, you agree to our Terms and Privacy Policy.")
                 .font(.system(size: 12, weight: .regular, design: .rounded))
                 .foregroundStyle(Theme.worldInkSecondary)
@@ -733,8 +738,8 @@ private struct Soften: ViewModifier {
 }
 
 /// The gate's dome: a big disc of clear glass, its top showing above the bottom of the screen like
-/// Wabi's, bending the city behind it (real Liquid Glass on iOS 26; frosted before), with a soft
-/// window light along its top rim.
+/// Wabi's, bending the city behind it (real Liquid Glass on iOS 26; frosted before), with light in
+/// the glass like Wabi's (`DomeLight`) in the globe's colours.
 private struct GateDome: View {
     let diameter: CGFloat
 
@@ -751,16 +756,81 @@ private struct GateDome: View {
                     .frame(width: diameter, height: diameter)
             }
         }
+        .overlay { DomeLight(diameter: diameter) }
         .overlay {
             Circle()
                 .strokeBorder(
-                    LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.08), .white.opacity(0)],
+                    LinearGradient(colors: [.white.opacity(0.45), .white.opacity(0.06), .white.opacity(0)],
                                    startPoint: .top, endPoint: .center),
-                    lineWidth: 1.5
+                    lineWidth: 1.2
                 )
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// The light in the gate's glass, like the glowing band in Wabi's dome but in Aurora's colours: a
+/// crescent pooled along the bottom inside of the rim (aqua at the rim, teal, mint inward), thickest
+/// at the bottom and gone by the sides, seen as the dome is swiped up; and a thin mint line along
+/// the top rim, which is what shows while it waits. Mocked over the user's screenshot first.
+private struct DomeLight: View {
+    let diameter: CGFloat
+
+    private static let aqua = Color(red: 0x5C / 255, green: 0xEF / 255, blue: 0xE6 / 255)
+    private static let teal = Color(red: 0x12 / 255, green: 0xC2 / 255, blue: 0xA6 / 255)
+    private static let mint = Color(red: 0xA9 / 255, green: 0xF5 / 255, blue: 0xC9 / 255)
+    private static let rim = Color(red: 0xA8 / 255, green: 0xF5 / 255, blue: 0xDC / 255)
+
+    var body: some View {
+        ZStack {
+            bottomBand(blur: 0.035, opacity: 0.4)
+            bottomBand(blur: 0.012, opacity: 0.78)
+            DomeCrescent(shift: 0.02)
+                .fill(Self.rim)
+                .mask { Self.fade(around: 270, full: 35, gone: 85, floor: 0.35) }
+                .blur(radius: diameter * 0.008)
+                .opacity(0.75)
+        }
+        .frame(width: diameter, height: diameter)
+        .mask { Circle() }
+        .allowsHitTesting(false)
+    }
+
+    private func bottomBand(blur: CGFloat, opacity: Double) -> some View {
+        DomeCrescent(shift: -0.12)
+            .fill(RadialGradient(stops: [.init(color: Self.mint, location: 0.86), .init(color: Self.teal, location: 0.93),
+                                         .init(color: Self.aqua, location: 1)],
+                                 center: .center, startRadius: 0, endRadius: diameter / 2))
+            .mask { Self.fade(around: 90, full: 40, gone: 80, floor: 0) }
+            .blur(radius: diameter * blur)
+            .opacity(opacity)
+    }
+
+    /// Opaque within `full` degrees of `around` (clockwise from the right, so 90 is the bottom),
+    /// fading to `floor` by `gone` degrees.
+    private static func fade(around: Double, full: Double, gone: Double, floor: Double) -> AngularGradient {
+        let low = Color.white.opacity(floor)
+        let stops: [Gradient.Stop] = [
+            .init(color: low, location: 0),
+            .init(color: low, location: (around - gone) / 360),
+            .init(color: .white, location: (around - full) / 360),
+            .init(color: .white, location: (around + full) / 360),
+            .init(color: low, location: (around + gone) / 360),
+            .init(color: low, location: 1),
+        ]
+        return AngularGradient(stops: stops, center: .center, startAngle: .degrees(0), endAngle: .degrees(360))
+    }
+}
+
+/// A disc less the same disc moved down by `shift` of its size (up when negative): a crescent along
+/// the top (moved down) or the bottom (moved up), thickest in the middle, tapering to nothing at
+/// the sides.
+private struct DomeCrescent: Shape {
+    var shift: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        Path(ellipseIn: rect).subtracting(Path(ellipseIn: rect.offsetBy(dx: 0, dy: shift * rect.height)))
     }
 }
 
@@ -794,27 +864,50 @@ private struct DotGrid: View {
 
 /// v3's buttons on the dark page: a white capsule first, and a glass one (Liquid Glass on iOS 26).
 struct WorldButton: View {
+    enum Icon {
+        case symbol(String)
+        case asset(String)
+    }
+
+    static let height: CGFloat = 50
+
     let title: String
-    var systemImage: String? = nil
+    var icon: Icon? = nil
     var prominent = false
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                if let systemImage {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 16, weight: .semibold))
+            Text(title)
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
+                .foregroundStyle(prominent ? Theme.worldCanvas : Theme.worldInk)
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.height)
+                // The mark sits at the left edge, so the words stay centred in the button.
+                .overlay(alignment: .leading) {
+                    if let icon {
+                        mark(icon)
+                            .frame(width: 22, height: 22)
+                            .padding(.leading, 18)
+                    }
                 }
-                Text(title)
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-            }
-            .foregroundStyle(prominent ? Theme.worldCanvas : Theme.worldInk)
-            .frame(maxWidth: .infinity)
-            .frame(height: 54)
-            .contentShape(Capsule())
+                .contentShape(Capsule())
         }
         .buttonStyle(WorldButtonStyle(prominent: prominent))
+    }
+
+    @ViewBuilder
+    private func mark(_ icon: Icon) -> some View {
+        switch icon {
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(prominent ? Theme.worldCanvas : Theme.worldInk)
+        case .asset(let name):
+            Image(name)
+                .resizable()
+                .scaledToFit()
+        }
     }
 }
 

@@ -112,7 +112,7 @@ do {
 //     are pinned). Round Earth (your friends) and round a friend you tapped (their four moments),
 //     everyone stays within reach of a glass neck to the middle as they bob (`GlassNeck`: further
 //     than |r1 - r2| apart and closer than r1 + 2.5 r2), clear of their neighbours, inside the
-//     screen sideways (201 either side), below the status bar, and above the copy (`copyTop` 66).
+//     screen sideways (201 either side), below the status bar, and well above the copy (62).
 //     With a friend in the middle, Earth is parked in its corner, clear of the moments and out of
 //     neck's reach, and no one else shows.
 do {

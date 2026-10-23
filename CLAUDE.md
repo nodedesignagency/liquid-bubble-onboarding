@@ -84,6 +84,17 @@ its plain white full-screen rectangle over the zoom, the glass and the page. Nev
 shader more than the one image `holoGlobe` has always had. The dissolve was rebuilt with the
 shader's original arguments (a flat hologram registered with the flat photos, see step 4).
 
+The fixed build: "nice, few things and we are good to go". The screen's palette fallback still
+said Dusk (fixed: `globePalette.3`, Aurora). Then: bubbles budding out of the globe or a friend
+came out on top of them; the one in the middle (globe or photo) should always be on top, so they
+come from behind. The globe's glow should belong to the middle and stay there, recoloured to the
+photo's background when a friend takes it. Better portraits (attractive people, Magnific stock,
+not Unsplash). A glowing band in the gate's dome like Wabi's (their video: a blue/violet band
+pooled along the bottom of a white glass ball) but in our colours, and the thin rounded up arrow
+from a picture they sent instead of the handle. The copy moved down to 20-24pt above the buttons
+(that was the red line). Buttons: Apple in white, Google in glass (Liquid Glass, as before),
+sized like their reference with the mark pinned left and the words centred.
+
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
   `BubbleEngine` (settled on its first scene in `init`, passed to `BubbleStage(engine:)`, never
@@ -101,9 +112,12 @@ shader's original arguments (a flat hologram registered with the flat photos, se
      Web Mercator's scale both ways); the gate waits for them (at most 4 s).
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
-     iOS 26) rises from below (`SpringCurve.domeIn`). Like Wabi's gate (on Mobbin), the hint sits
-     on the glass, 58pt below its top: a soft rounded handle (36x5) that lifts 4pt every 2.4 s
-     over "Swipe up to enter", no arrow. Dragging lifts it with resistance (`EarthLift`, as v2); letting go above 90pt,
+     iOS 26) rises from below (`SpringCurve.domeIn`), lit inside like Wabi's dome in Aurora's
+     colours (`DomeLight`): a crescent along the bottom inside of the rim (aqua at the rim, teal,
+     mint inward, gone by the sides; seen as it is swiped up) and a thin mint line along the top
+     rim (what shows while it waits); `DomeCrescent` is the disc less itself shifted. Like Wabi's
+     gate (on Mobbin), the hint sits on the glass, 58pt below its top: a thin `arrow.up` (the
+     user's pick) that lifts 4pt every 2.4 s, over "Swipe up to enter". Dragging lifts it with resistance (`EarthLift`, as v2); letting go above 90pt,
      a flick, or a tap on it enters, else it springs back. Entering, it sweeps up off the screen
      (`domeOut`) over the city.
   3. Rise (0.3 s later, 1.3 s, UIKit camera animation): pitch to 0, distance 2.6 km.
@@ -127,11 +141,19 @@ shader's original arguments (a flat hologram registered with the flat photos, se
      six places round Earth (`OrbitChoreography.slots`, each person's preferred place in
      `homeSlot`, on their city's side), necks of glass from Earth's ring (`GlassNeck`), bobbing so
      the necks breathe. Grid in, "Meet Orbit." / "Your friends, always within reach.", buttons.
+     The copy sits in the bottom stack, its last line 22pt (`copyGap`) above the buttons, which
+     keep their place while hidden. Buttons (`WorldButton`, 50pt, 13 apart, 20 from the sides):
+     "Continue with Apple" white, "Continue with Google" Liquid Glass (`.glassEffect(.regular
+     .interactive())`), the mark 22pt pinned 18 from the left (`apple.logo`, `google-g`: Google's
+     official G from their Firebase sign-in assets, PNG at 2x and 3x), the words centred.
   7. Tap a friend (`.focus(id)`, `focus(on:)`): the other five melt into Earth while the friend
      glides to the middle at Earth's size (91, photo 86); 0.3 s later Earth (with them inside)
      shrinks and flies to the top-left corner (`homeCorner`, 21pt of glass 20pt in, just under the
      status bar, placed from the real safe area by `placeHomeCorner`); the neck to it stretches and
-     lets go. Then four moments from the friend's week bud out of them one by one
+     lets go. The globe's aura fades as Earth shrinks away (`state.glow` by Earth's size), and a
+     glow of the same shape (`HubGlow`) comes up round the friend in the middle in colours taken
+     from their photo's background (`WorldPhoto.glowColors`: the outer band of the circle crop,
+     brightened). Then four moments from the friend's week bud out of them one by one
      (`moments(of:)`, bubbles 16-39, photos `moment-<friend>-<n>`, at `momentPlaces`). Copy:
      "Zoe's orbit." / "This week in Dubai." / "Tap Earth to come back." Tapping the corner Earth
      plays `.bloom` (`constellation`): moments melt back into the friend, Earth flies home, the
@@ -171,14 +193,19 @@ shader's original arguments (a flat hologram registered with the flat photos, se
   colour, so the grid doesn't show through. The globe follows Earth's bubble
   (`BubbleStage`'s `centerpiece` closure gets Earth as drawn, turned by the spin;
   `WorldPhoto.globeRadius` keeps it full size while Earth's glass seeps out or drains).
-  Layers: grid, zoom, gate shade, glass, photos melting away, globe, photos, copy, dome. Photos
-  melting into Earth must stay over the glass (`zIndex` 0.5 + depth/1000; the globe is 1): under
-  it, the glass's page fill hid them at once. The pin's white edge goes by `fullRadius` while a
+  Layers (`BubbleStage.worldLayer`, from each bubble's `startRadius` and `targetRadius`): glass
+  0, the middle's glow 0.3, photos budding out or melting back 0.5 (over the glass, whose page
+  fill would hide them, and under the globe and the friend in the middle, so they come from
+  behind), a photo leaving the middle 0.6, the globe 1, other photos 2 + depth, the one heading
+  for the middle 500 + depth, pins and friends lifting off from them 1000 + depth (on the globe's
+  face). Then the copy and the dome. The pin's white edge goes by `fullRadius` while a
   bubble appears or vanishes, so only real pins have it (not buds, not friends melting away).
 - Engine additions: `popsInPlace` (pins appear on their city), `isAppearing` / `isVanishing` /
   `fullRadius` (photos pop only when appearing or leaving, not when a pin grows), an appearing
   bubble buds out of the anchor its target names (a friend's moments out of them). `bubbleCount`
   is 40 for the moments; `homeCorner` is a static var the screen sets.
+- v3's portraits are `person-1`...`person-6` (`WorldPhoto.image` falls back to `friend-<id>`,
+  which v1 and v2 keep using).
 - Moment photos (`Orbit/Assets.xcassets/moment-<friend>-<n>`, 480px): real photographs from the
   Freepik stock library through the Magnific MCP (`stock_search`/`stock_download`, which spend no
   credits; never call its generation tools without asking), picked by a subagent from previews and
@@ -297,7 +324,7 @@ edges, but wanted an original story, which is the current one.
 - `Orbit/Bubbles/GlassLiquid.swift`: v2's `GlassLiquidLayer` (photo layer, velocities, stretch),
   `EarthLift` (the swipe), `GlassPhoto` (photos at 95% of the orb, glow colours).
 - `Orbit/Bubbles/EarthZoom.swift`: v3's city (`CityMapController`), snapshots (`ZoomImagery`),
-  the real Earth for the globe (`GlobeImagery`), `ZoomStack`, `ZoomPath`.
+  `ZoomStack`, `ZoomPath`.
 - `Orbit/Bubbles/HoloGlobe.swift`: `GlobeState`, `GlobePalette`, `HoloGlobeView` (the `holoGlobe` shader).
 - `Orbit/Bubbles/GlassNetwork.swift`: `WorldGlass`, `GlassNeck`, `WorldPhoto`, `SpinDial`.
 - `Orbit/Onboarding/WorldOnboardingView.swift`: the v3 screen, its sequence, gate (`GateDome`),
@@ -352,13 +379,10 @@ SwiftUI gotchas learned on device:
 
 ## Open items
 
-- v3 after the white-screen fix: the globe shader is back to its original arguments (only the
-  flat blend is new), so it should run again. Still never seen on device: the dissolve (flat
-  hologram over the photos, then the curl), the Aurora globe, the corner Earth and moments, the
-  one-shape glass (`glassEffect` on a unioned `Path` every frame), the 3D first snapshots
-  (`preferredConfiguration` realistic; the handover at the tower was hidden by the white screen),
-  and `proxy.safeAreaInsets` inside a GeometryReader that ignores the safe area (59 if it reads 0).
-  The gate's new hint (handle and words on the glass) was seen working.
+- Confirmed on device after the white-screen fix: the dissolve (flat hologram over the photos,
+  then the curl), the Aurora globe, the one-shape glass (no seams), the corner Earth and moments,
+  the gate hint. Not yet seen: the stacking, the middle's glow, the dome's light, the new copy
+  position and buttons, the portraits, and the 3D first snapshots at the tower's handover.
 - The user's earlier recording (the one before this) confirmed: the gate dome, the city waiting
   until rendered (no grey), six friends, tap to focus, the dot grid hidden under the glass.
 - MapKit's Apple Maps logo and Legal link show during the city but not in the snapshots.

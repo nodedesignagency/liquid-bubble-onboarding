@@ -106,6 +106,12 @@ struct BubbleStage: View {
                     case .v3:
                         let turned = turnedBySpin(bubbles, at: time)
                         WorldGlass(bubbles: turned, metrics: metrics, size: proxy.size)
+                        if let hub = Self.photoHub(turned) {
+                            HubGlow(colors: WorldPhoto.glowColors(for: hub.id), radius: WorldPhoto.photoRadius(glass: hub.radius) * metrics.scale,
+                                    strength: Self.hubGlowStrength(hub))
+                                .position(metrics.point(hub.center))
+                                .zIndex(0.3)
+                        }
                         if let centerpiece {
                             centerpiece(turned.indices.contains(OrbitChoreography.earth) ? turned[OrbitChoreography.earth] : nil)
                                 .zIndex(1)
@@ -115,12 +121,7 @@ struct BubbleStage: View {
                             WorldDisc(image: WorldPhoto.image(for: bubble.id), diameter: diameter,
                                       edge: WorldPhoto.pinEdge(for: bubble))
                                 .position(metrics.point(bubble.center))
-                                // Budding out of a friend in the middle, they form on top of
-                                // their photo like a droplet, instead of hiding under it; melting
-                                // back into Earth, they slip under the others and under the globe,
-                                // but stay over the glass: its page fill would hide them at once.
-                                .zIndex(bubble.isAppearing ? 1000 + bubble.depth
-                                        : bubble.isLeaving ? 0.5 + bubble.depth / 1000 : bubble.depth)
+                                .zIndex(Self.worldLayer(of: bubble))
                         }
                     }
                     ForEach(look == .v1 ? bubbles : []) { bubble in
@@ -193,6 +194,34 @@ struct BubbleStage: View {
             out.center = CGPoint(x: around.x + pivot.x, y: around.y + pivot.y)
             return out
         }
+    }
+
+    /// v3: who is drawn over whom. The one in the middle, or heading there, is on top, so the
+    /// others bud out from behind it and melt back in behind it, and the globe (zIndex 1) is over
+    /// anyone budding out of Earth, melting into it, or leaving the middle as Earth comes back.
+    /// Pins, and friends lifting off from them, stay on the globe's face. The glass is 0 and the
+    /// glow in the middle 0.3.
+    static func worldLayer(of bubble: RenderedBubble) -> Double {
+        let middle = OrbitChoreography.bloomEarth.radius - 1
+        if WorldPhoto.pinEdge(for: bubble) > 0.01 || abs(bubble.startRadius - OrbitChoreography.pinRadius) < 0.5 {
+            return 1000 + bubble.depth
+        }
+        if bubble.targetRadius >= middle { return 500 + bubble.depth }
+        if bubble.startRadius >= middle { return 0.6 + bubble.depth / 1000 }
+        if bubble.isAppearing || bubble.isLeaving { return 0.5 + bubble.depth / 1000 }
+        return 2 + bubble.depth
+    }
+
+    /// v3: the friend in the middle (the biggest photo, once it is bigger than anyone round it).
+    static func photoHub(_ bubbles: [RenderedBubble]) -> RenderedBubble? {
+        let hub = bubbles.filter { WorldPhoto.hasPhoto($0.id) }.max { $0.radius < $1.radius }
+        guard let hub, hub.radius > 45 else { return nil }
+        return hub
+    }
+
+    /// The middle's glow comes up as the friend grows into the middle (and goes as they leave).
+    static func hubGlowStrength(_ hub: RenderedBubble) -> Double {
+        Double(min(max((hub.radius - 45) / 40, 0), 1))
     }
 
     private func turnedBySpin(_ bubbles: [RenderedBubble], at time: Double) -> [RenderedBubble] {
@@ -353,6 +382,31 @@ private struct WorldDisc: View {
                     .opacity(edge)
             }
         }
+    }
+}
+
+/// v3: the glow round whoever is in the middle, like the globe's aura (a tight bright rim and a
+/// wide soft spill, the same falloff as `holoGlobe`'s), in colours from the photo's own background
+/// (`WorldPhoto.glowColors`), so it changes with the person. `radius` is the photo's edge.
+private struct HubGlow: View {
+    let colors: (inner: Color, outer: Color)
+    let radius: CGFloat
+    let strength: Double
+
+    var body: some View {
+        let reach = max(radius * 2.2, 1)
+        // The aura's falloff past the edge, as fractions of the radius: 0.42 e^(-b/0.3) + 0.35 e^(-b/0.06).
+        let beyond: [CGFloat] = [0, 0.06, 0.15, 0.3, 0.6, 1.2]
+        let glow: [Double] = [0.77, 0.47, 0.28, 0.16, 0.06, 0]
+        var stops: [Gradient.Stop] = [Gradient.Stop(color: colors.inner.opacity(0.77 * strength * 0.9), location: 0)]
+        for i in beyond.indices {
+            let tint = beyond[i] < 0.2 ? colors.inner : colors.outer
+            stops.append(Gradient.Stop(color: tint.opacity(glow[i] * strength * 0.9), location: (1 + beyond[i]) * radius / reach))
+        }
+        return Circle()
+            .fill(RadialGradient(stops: stops, center: .center, startRadius: 0, endRadius: reach))
+            .frame(width: reach * 2, height: reach * 2)
+            .allowsHitTesting(false)
     }
 }
 

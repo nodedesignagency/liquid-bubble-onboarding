@@ -22,7 +22,7 @@ let end = version == "v1" ? 16.6 : version == "v2" ? 12.6 : 28.0, fps = 30.0
 let engine = BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
 var pending: [(Double, BubbleLayout)] = []
 var next = 0
-var out = "frame,id,x,y,r,tr,tg,tb,depth,leaving,vx,vy,full,appearing,vanishing\n"
+var out = "frame,id,x,y,r,tr,tg,tb,depth,leaving,vx,vy,full,appearing,vanishing,start,target\n"
 var threadsOut = "frame,a,b,strength\n"
 for f in 0..<Int(end * fps) {
     let t = Double(f) / fps
@@ -41,7 +41,7 @@ for f in 0..<Int(end * fps) {
     let earlier = engine.snapshot(at: t - 1.0 / 120)
     for b in engine.snapshot(at: t) {
         let vx = (b.center.x - earlier[b.id].center.x) * 120, vy = (b.center.y - earlier[b.id].center.y) * 120
-        out += "\(f),\(b.id),\(b.center.x),\(b.center.y),\(b.radius),\(b.tint.red),\(b.tint.green),\(b.tint.blue),\(b.depth),\(b.isLeaving ? 1 : 0),\(vx),\(vy),\(b.fullRadius),\(b.isAppearing ? 1 : 0),\(b.isVanishing ? 1 : 0)\n"
+        out += "\(f),\(b.id),\(b.center.x),\(b.center.y),\(b.radius),\(b.tint.red),\(b.tint.green),\(b.tint.blue),\(b.depth),\(b.isLeaving ? 1 : 0),\(vx),\(vy),\(b.fullRadius),\(b.isAppearing ? 1 : 0),\(b.isVanishing ? 1 : 0),\(b.startRadius),\(b.targetRadius)\n"
     }
     for th in engine.threads(at: t) { threadsOut += "\(f),\(th.a),\(th.b),\(th.strength)\n" }
 }

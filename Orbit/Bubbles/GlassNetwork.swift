@@ -158,7 +158,67 @@ enum WorldPhoto {
         if let moment = OrbitChoreography.moment(id) {
             return moments[(moment.friend - 1) * 4 + moment.index - 1]
         }
+        if (1...6).contains(id), let portrait = people[id - 1] { return portrait }
         return Person.samples[(id - 1) % Person.samples.count].photo
+    }
+
+    /// v3's own portraits of your six friends, `person-<id>` (v1 and v2 keep `friend-<id>`).
+    private static let people: [UIImage?] = (1...6).map { UIImage(named: "person-\($0)") }
+
+    /// Two colours for the glow round someone in the middle, from their photo's background: the
+    /// outer band of the circle the photo is cropped to, where the background shows (its top for
+    /// the inner colour, its sides for the outer), with a little more colour and light so it glows.
+    static func glowColors(for id: Int) -> (inner: Color, outer: Color) {
+        if let known = glowCache[id] { return known }
+        let colors = measureGlow(image(for: id))
+        glowCache[id] = colors
+        return colors
+    }
+
+    private static var glowCache: [Int: (inner: Color, outer: Color)] = [:]
+
+    private static func measureGlow(_ image: UIImage?) -> (inner: Color, outer: Color) {
+        let fallback = (inner: Color(red: 0.6, green: 0.85, blue: 0.8), outer: Color(red: 0.4, green: 0.7, blue: 0.75))
+        guard let cgImage = image?.cgImage else { return fallback }
+        let n = 24
+        var pixels = [UInt8](repeating: 0, count: n * n * 4)
+        let drawn: Bool = pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.interpolationQuality = .medium
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: n, height: n))
+            return true
+        }
+        guard drawn else { return fallback }
+        var top = [0.0, 0.0, 0.0], sides = [0.0, 0.0, 0.0]
+        var topCount = 0.0, sideCount = 0.0
+        for y in 0..<n {
+            for x in 0..<n {
+                // Row 0 is the image's top.
+                let dx = (Double(x) + 0.5) / Double(n) - 0.5, dy = (Double(y) + 0.5) / Double(n) - 0.5
+                let r = (dx * dx + dy * dy).squareRoot()
+                guard r > 0.36, r < 0.5, dy < 0.15 else { continue }
+                let i = (y * n + x) * 4
+                let rgb = [Double(pixels[i]), Double(pixels[i + 1]), Double(pixels[i + 2])].map { $0 / 255 }
+                if dy < -0.15 {
+                    for c in 0..<3 { top[c] += rgb[c] }
+                    topCount += 1
+                } else {
+                    for c in 0..<3 { sides[c] += rgb[c] }
+                    sideCount += 1
+                }
+            }
+        }
+        guard topCount > 0, sideCount > 0 else { return fallback }
+        return (glowing(top.map { $0 / topCount }), glowing(sides.map { $0 / sideCount }))
+    }
+
+    /// A background colour made to glow on the dark page: more saturated, and bright.
+    private static func glowing(_ rgb: [Double]) -> Color {
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(red: rgb[0], green: rgb[1], blue: rgb[2], alpha: 1).getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        return Color(hue: Double(hue), saturation: Double(min(saturation * 1.4 + 0.08, 1)), brightness: Double(max(brightness, 0.82)))
     }
 
     /// `moment-<friend>-<n>`: four from each of your six friends' weeks (places, coffee, food).

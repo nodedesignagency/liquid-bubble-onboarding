@@ -30,7 +30,9 @@ GLASS = (0x16, 0x16, 0x1A)                                           # Theme.wor
 HUB = (0.0, -120.0); HUB_R = 91.0; GLOBE_R = 84.0                     # OrbitChoreography.bloomEarth, globeRadius
 GLOBE_VIEW = (25.0, 12.0, 9.0)                                       # globeView: latitude, longitude, distance
 CITY = (48.8584, 2.2945)                                             # EarthZoom.city
-COPY_TOP = 66.0                                                      # WorldOnboardingView.copyTop
+COPY_GAP = 22.0                                                      # WorldOnboardingView.copyGap
+BUTTON_H, BUTTON_GAP, SIDE = 50.0, 13.0, 20.0                        # WorldButton.height, the footer's spacing, its margins
+FOOTER_TOP = 874 - 34 - 8 - (BUTTON_H * 2 + BUTTON_GAP * 2 + 6 + 15)   # safe area, padding, buttons and legal line
 EARTH_RADIUS = 6371000.0
 METERS_PER_POINT = 4.0                                               # assumed handover scale
 START_ROLL = 30.0                                                    # 360 - EarthZoom.heading
@@ -137,6 +139,36 @@ def stack_opacity(t, u):
     if u is None or not shows_snapshots(u): return 0.0
     if t >= V3_BACK: return ease((V3_BACK_LEN - (t - V3_BACK)) / 0.6)
     return ease((t - V3_ZOOM) / 0.6)
+def _ss(e0, e1, x): t_ = np.clip((x - e0) / (e1 - e0), 0, 1); return t_ * t_ * (3 - 2 * t_)
+def dome_light(img, cx, cy, R):                                       # DomeLight
+    """The crescent of aqua-teal-mint light along the bottom inside of the dome, and the mint top rim."""
+    D = 2 * R
+    x0, y0 = int(max((cx - R) * S, 0)), int(max((cy - R) * S, 0))
+    x1, y1 = int(min((cx + R) * S, W * S)), int(min((cy + R) * S, H * S))
+    if x1 <= x0 or y1 <= y0: return img
+    px, py = PX[y0:y1, x0:x1], PY[y0:y1, x0:x1]
+    def disc(dy): return np.clip(R - np.hypot(px - cx, py - (cy + dy)) + 0.5 / S, 0, 1)
+    inside = disc(0)
+    ang = np.degrees(np.arctan2(py - cy, px - cx))
+    def blur(a, r):
+        im = Image.fromarray((np.clip(a, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(max(r * S, 0.1)))
+        return np.asarray(im, np.float32) / 255
+    out = np.asarray(img.crop((x0, y0, x1, y1)), np.float32) / 255
+    rr = np.hypot(px - cx, py - cy) / R
+    def hexc(h): return np.array([(h >> 16) & 255, (h >> 8) & 255, h & 255], np.float32) / 255
+    mint, teal, aqua = hexc(0xA9F5C9), hexc(0x12C2A6), hexc(0x5CEFE6)
+    col = np.where((rr < 0.93)[..., None], mint + (teal - mint) * np.clip((rr - 0.86) / 0.07, 0, 1)[..., None],
+                   teal + (aqua - teal) * np.clip((rr - 0.93) / 0.07, 0, 1)[..., None])
+    band = np.clip(inside - disc(-0.12 * D), 0, 1) * (1 - _ss(40, 80, np.abs(ang - 90)))
+    for r_, op in ((0.035, 0.4), (0.012, 0.78)):
+        a = blur(band, r_ * D) * inside * op
+        out = out * (1 - a[..., None]) + col * a[..., None]
+    top = np.clip(inside - disc(0.02 * D), 0, 1) * (0.35 + 0.65 * (1 - _ss(35, 85, np.abs(ang + 90))))
+    a = blur(top, 0.008 * D) * inside * 0.75
+    out = out * (1 - a[..., None]) + hexc(0xA8F5DC) * a[..., None]
+    img.paste(Image.fromarray((np.clip(out, 0, 1) * 255).astype(np.uint8)), (x0, y0))
+    return img
+
 def nudge(t):                                                         # WorldOnboardingView.nudge
     phase = (t % 2.4) / 0.8
     return math.sin(math.pi * phase) * 4 if phase < 1 else 0.0
@@ -205,8 +237,11 @@ def headline_lines(key):
 # ---- drawing ----
 f = lambda w, s: ImageFont.truetype(os.path.join(fonts, f"nunito-{w}.ttf"), int(s * S))
 head_font, button_font, legal_font, note_font, hint_font = f(700, 27), f(700, 17), f(400, 12), f(600, 13), f(700, 15)
-photos = {i: Image.open(os.path.join(assets, f"friend-{i}.imageset/friend-{i}.jpg")).convert("RGB").resize((360, 360), Image.LANCZOS)
-          for i in range(1, 10)}
+def _photo(name):
+    path = os.path.join(assets, f"{name}.imageset/{name}.jpg")
+    return Image.open(path).convert("RGB").resize((360, 360), Image.LANCZOS) if os.path.exists(path) else None
+# v3's own portraits (person-1...6), else the shared friend photos (WorldPhoto.image)
+photos = {i: (_photo(f"person-{i}") if i <= 6 else None) or _photo(f"friend-{i}") for i in range(1, 10)}
 for i in MOMENTS:
     friend, n = moment_of(i)
     path = os.path.join(assets, f"moment-{friend}-{n}.imageset/moment-{friend}-{n}.jpg")
@@ -250,15 +285,48 @@ def disc(img, src, c, r, edge):
         img.paste(Image.new("RGB", (D, D), (255, 255, 255)), (x, y), ring)
 
 def photo_radius(b):                                                  # WorldPhoto.radius(for:)
-    _, _, _, r, _, leaving, full, appearing, _ = b
+    r, leaving, full, appearing = b[3], b[5], b[6], b[7]
     glass_to_photo = lambda g: g - min(5, g * 0.15)
     if not (appearing or leaving): return glass_to_photo(r)
     if full <= 0.5: return 0
     return glass_to_photo(full) * min(max((r / full - 0.3) / 0.7, 0), 1.12)
 
 def pin_edge(b):                                                      # WorldPhoto.pinEdge(for:)
-    _, _, _, r, _, _, full, appearing, vanishing = b
+    r, full, appearing, vanishing = b[3], b[6], b[7], b[8]
     return min(max((24 - (full if appearing or vanishing else r)) / 8, 0), 1)
+
+def world_layer(b):                                                   # BubbleStage.worldLayer(of:)
+    depth, leaving, appearing, start, target = b[4], b[5], b[7], b[9], b[10]
+    middle = HUB_R - 1
+    if pin_edge(b) > 0.01 or abs(start - 14) < 0.5: return 1000 + depth
+    if target >= middle: return 500 + depth
+    if start >= middle: return 0.6 + depth / 1000
+    if appearing or leaving: return 0.5 + depth / 1000
+    return 2 + depth
+
+_glow_cache = {}
+def glow_colors(i):                                                   # WorldPhoto.glowColors(for:)
+    if i in _glow_cache: return _glow_cache[i]
+    a = np.asarray(photos[i].resize((24, 24), Image.BILINEAR), np.float32) / 255
+    yy, xx = np.mgrid[0:24, 0:24]; dx = (xx + 0.5) / 24 - 0.5; dy = (yy + 0.5) / 24 - 0.5
+    rr = np.hypot(dx, dy); band = (rr > 0.36) & (rr < 0.5) & (dy < 0.15)
+    def glowing(rgb):
+        import colorsys
+        h, s_, v = colorsys.rgb_to_hsv(*rgb)
+        return np.array(colorsys.hsv_to_rgb(h, min(s_ * 1.4 + 0.08, 1), max(v, 0.82)))
+    out = (glowing(a[band & (dy < -0.15)].mean(axis=0)), glowing(a[band & (dy >= -0.15)].mean(axis=0)))
+    _glow_cache[i] = out
+    return out
+
+def hub_glow(rgb, b):                                                 # HubGlow
+    strength = min(max((b[3] - 45) / 40, 0), 1)
+    if strength <= 0: return rgb
+    inner, outer = glow_colors(b[0])
+    c = pt(b[1], b[2]); R = (b[3] - min(5, b[3] * 0.15)) * SCALE
+    beyond = np.maximum(np.hypot(PX - c[0], PY - c[1]) - R, 0) / R
+    a = np.interp(beyond, [0, 0.06, 0.15, 0.3, 0.6, 1.2], [0.77, 0.47, 0.28, 0.16, 0.06, 0]) * strength * 0.9
+    col = np.where((beyond < 0.2)[..., None], inner, outer)
+    return rgb * (1 - a[..., None]) + col * a[..., None]
 
 gy_, gx_ = np.mgrid[0:H * S, 0:W * S].astype(np.float32)
 PX, PY = (gx_ + 0.5) / S, (gy_ + 0.5) / S
@@ -278,7 +346,8 @@ rows = defaultdict(list)
 with open(frames_csv) as fh:
     for r in csv.DictReader(fh):
         rows[int(r["frame"])].append((int(r["id"]), float(r["x"]), float(r["y"]), float(r["r"]), float(r["depth"]),
-                                      r["leaving"] == "1", float(r["full"]), r["appearing"] == "1", r["vanishing"] == "1"))
+                                      r["leaving"] == "1", float(r["full"]), r["appearing"] == "1", r["vanishing"] == "1",
+                                      float(r["start"]), float(r["target"])))
 positions = {fi: {b[0]: b for b in bs} for fi, bs in rows.items()}
 
 for fi in sorted(rows):
@@ -337,14 +406,17 @@ for fi in sorted(rows):
             g["cx"], g["cy"] = pt(e[1], e[2])
             glass_r = e[6] if (e[7] or e[8]) else e[3]
             g["radius"] = glass_r * GLOBE_R / HUB_R * SCALE
-    # photos melting back into Earth slip under the globe (but over the glass)
-    leaving = sorted((b for b in bubbles.values() if has_photo(b[0]) and b[3] > 0.5 and b[5] and not b[7]), key=lambda b: b[4])
-    if any(photo_radius(b) >= 0.25 for b in leaving):
-        under = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
-        for b in leaving:
-            pr = photo_radius(b)
-            if pr >= 0.25: disc(under, photos[b[0]], pt(b[1], b[2]), pr * SCALE, pin_edge(b))
-        rgb = np.asarray(under, np.float32) / 255
+    # the glow round a friend in the middle, in their photo's colours
+    hubs = [b for b in bubbles.values() if has_photo(b[0]) and b[3] > 45]
+    if hubs: rgb = hub_glow(rgb, max(hubs, key=lambda b: b[3]))
+    # photos under the globe: budding out of Earth or the friend in the middle, melting back in,
+    # or leaving the middle as Earth comes back (BubbleStage.worldLayer below 1)
+    shown_photos = [b for b in bubbles.values() if has_photo(b[0]) and b[3] > 0.5 and photo_radius(b) >= 0.25]
+    under = sorted((b for b in shown_photos if world_layer(b) < 1), key=world_layer)
+    if under:
+        im_under = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
+        for b in under: disc(im_under, photos[b[0]], pt(b[1], b[2]), photo_radius(b) * SCALE, pin_edge(b))
+        rgb = np.asarray(im_under, np.float32) / 255
     if g is not None and g["opacity"] > 0:
         reach = g["radius"] * 3
         x0 = max(int((g["cx"] - reach) * S), 0); x1 = min(int((g["cx"] + reach) * S) + 1, W * S)
@@ -357,22 +429,18 @@ for fi in sorted(rows):
     img = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
     for text, y, col in labels:
         put_text(img, 40 * S, y * S, text, note_font, col, 0.8)
-    # photos, on top of the globe; budding, they form on top (the ones melting away are drawn above)
-    order = sorted((b for b in bubbles.values() if has_photo(b[0]) and b[3] > 0.5 and (b[7] or not b[5])),
-                   key=lambda b: (1000 + b[4]) if b[7] else b[4])
-    for b in order:
-        pr = photo_radius(b)
-        if pr < 0.25: continue
-        disc(img, photos[b[0]], pt(b[1], b[2]), pr * SCALE, pin_edge(b))
-    # the copy: the old headline fades out as the new one eases in, title first
+    # photos over the globe, the one in the middle (or heading there) on top
+    for b in sorted((b for b in shown_photos if world_layer(b) >= 1), key=world_layer):
+        disc(img, photos[b[0]], pt(b[1], b[2]), photo_radius(b) * SCALE, pin_edge(b))
+    # the copy, its last line COPY_GAP above the buttons: the old headline fades out as the new one
+    # eases in, title first
     d = ImageDraw.Draw(img)
-    top = H / 2 + COPY_TOP * SCALE
     (key, start), (old, went) = headline_at(t)
     for k, alpha_of in [(old, lambda j, tl: 1 - ease((t - went) / 0.35)),
                         (key, lambda j, tl: ease((t - start - (0.2 if j < tl else 0.45)) / 0.6))]:
         if k is None: continue
         lines, title_lines = headline_lines(k)
-        y = top
+        y = FOOTER_TOP - COPY_GAP - (34 * len(lines) + 4) + 4
         for j, (line, col) in enumerate(lines):
             tw = d.textlength(line, font=head_font)
             put_text(img, (W * S - tw) / 2, (y + 2) * S, line, head_font, col, alpha_of(j, title_lines))
@@ -381,16 +449,20 @@ for fi in sorted(rows):
     fa = fade(t, V3_FOOTER, 0.6) * (1 - fade(t, V3_CONTINUE, 0.4))
     if fa > 0:
         dy = 16 * (1 - fa)
-        for j, (label, bg, fg) in enumerate([("Continue with Apple", (255, 255, 255), (4, 4, 6)), ("Continue with phone number", GLASS, INK)]):
-            y0 = 874 - 34 - 8 - 18 - 6 - 12 - 54 - (66 * (1 - j)) + dy
+        for j, (label, bg, fg) in enumerate([("Continue with Apple", (255, 255, 255), (4, 4, 6)), ("Continue with Google", GLASS, INK)]):
+            y0 = FOOTER_TOP + j * (BUTTON_H + BUTTON_GAP) + dy
             box = Image.new("L", (W * S, H * S), 0)
-            ImageDraw.Draw(box).rounded_rectangle((24 * S, y0 * S, (W - 24) * S, (y0 + 54) * S), radius=27 * S, fill=int(255 * fa))
+            ImageDraw.Draw(box).rounded_rectangle((SIDE * S, y0 * S, (W - SIDE) * S, (y0 + BUTTON_H) * S), radius=BUTTON_H / 2 * S, fill=int(255 * fa))
             img.paste(Image.new("RGB", img.size, bg), (0, 0), box)
             tw = d.textlength(label, font=button_font)
-            put_text(img, (W * S - tw) / 2, (y0 + 16) * S, label, button_font, fg, fa)
+            put_text(img, (W * S - tw) / 2, (y0 + 14) * S, label, button_font, fg, fa)
+            # the mark, pinned left (a dot stands in for the Apple and Google marks)
+            mark = Image.new("L", img.size, 0)
+            ImageDraw.Draw(mark).ellipse(((SIDE + 18 + 3) * S, (y0 + 17) * S, (SIDE + 18 + 19) * S, (y0 + 33) * S), fill=int(255 * fa))
+            img.paste(Image.new("RGB", img.size, fg if j == 0 else (66, 133, 244)), (0, 0), mark)
         legal = "By continuing, you agree to our Terms and Privacy Policy."
         tw = d.textlength(legal, font=legal_font)
-        put_text(img, (W * S - tw) / 2, (874 - 34 - 8 - 16 + dy) * S, legal, legal_font, INK2, fa)
+        put_text(img, (W * S - tw) / 2, (FOOTER_TOP + 2 * BUTTON_H + 2 * BUTTON_GAP + 6 + dy) * S, legal, legal_font, INK2, fa)
     # the gate: the dome of glass (frosted here) and its hint
     offset = dome_offset(t)
     dome_cy = DOME_TOP + DOME_R + offset
@@ -410,15 +482,17 @@ for fi in sorted(rows):
         ramp = np.clip(1 - np.linspace(0, 1, mask.size[1]) * 2, 0, 1)[:, None] * 0.6
         rim_canvas = Image.new("L", img.size, 0); rim_canvas.paste(Image.fromarray((rim * ramp).astype(np.uint8)), box[:2])
         img.paste(Image.new("RGB", img.size, (255, 255, 255)), (0, 0), rim_canvas)
+        img = dome_light(img, W / 2, dome_cy, DOME_R)
         ha = hint_opacity(t)
         if ha > 0.002:
-            # like Wabi's: the words on the glass, under a soft rounded handle that lifts now and then
+            # like Wabi's: the words on the glass, under a thin up arrow that lifts now and then
             hy = DOME_TOP + offset + 58
-            cy = hy - 15.5 - nudge(t)
-            handle = Image.new("L", img.size, 0)
-            ImageDraw.Draw(handle).rounded_rectangle(((W / 2 - 18) * S, (cy - 2.5) * S, (W / 2 + 18) * S, (cy + 2.5) * S),
-                                                     radius=2.5 * S, fill=int(255 * 0.75 * ha))
-            img.paste(Image.new("RGB", img.size, (255, 255, 255)), (0, 0), handle)
+            ay = hy - 22 - nudge(t)
+            arrow = Image.new("L", img.size, 0); ad = ImageDraw.Draw(arrow); lw = int(1.6 * S)
+            ad.line([(W / 2 * S, (ay - 8) * S), (W / 2 * S, (ay + 8) * S)], fill=int(255 * 0.8 * ha), width=lw)
+            ad.line([((W / 2 - 6) * S, (ay - 2) * S), (W / 2 * S, (ay - 8) * S), ((W / 2 + 6) * S, (ay - 2) * S)],
+                    fill=int(255 * 0.8 * ha), width=lw, joint="curve")
+            img.paste(Image.new("RGB", img.size, (255, 255, 255)), (0, 0), arrow)
             line = "Swipe up to enter"
             tw = ImageDraw.Draw(img).textlength(line, font=hint_font)
             shadowed_text(img, (W * S - tw) / 2, (hy - 1) * S, line, hint_font, ha * 0.92)
