@@ -32,7 +32,7 @@ struct HomeView: View {
                 .padding(.top, 220)
             }
         case .v3:
-            // Earth in its glass orb with everyone around it, as the onboarding left it. Spin it.
+            // The glowing globe with the friends in orbit, as the onboarding left it. Spin it.
             ZStack {
                 WorldOnboardingView(mode: .home)
                 VStack(spacing: 0) {
@@ -46,10 +46,13 @@ struct HomeView: View {
         }
     }
 
+    private var ink: Color { version == .v3 ? Theme.worldInk : Theme.ink }
+    private var inkSecondary: Color { version == .v3 ? Theme.worldInkSecondary : Theme.inkSecondary }
+
     private var title: some View {
         Text("You're in orbit")
             .font(.system(size: 28, weight: .semibold, design: .rounded))
-            .foregroundStyle(Theme.ink)
+            .foregroundStyle(ink)
     }
 
     private var replay: some View {
@@ -57,7 +60,7 @@ struct HomeView: View {
             ForEach(OnboardingVersion.allCases, id: \.self) { option in
                 Button("Replay \(option.rawValue)") { onReplay(option) }
                     .font(.system(size: 16, weight: option == version ? .semibold : .medium, design: .rounded))
-                    .foregroundStyle(option == version ? Theme.ink : Theme.inkSecondary)
+                    .foregroundStyle(option == version ? ink : inkSecondary)
             }
         }
         .frame(height: 44)

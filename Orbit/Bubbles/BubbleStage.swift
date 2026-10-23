@@ -26,8 +26,8 @@ enum StageLook {
     case v1
     /// No background liquid: the glass orbs are the liquid themselves (`GlassLiquidLayer`).
     case v2
-    /// One crisp body of flat, pale liquid with sharp photo discs in it (`FlatLiquidLayer`). Earth
-    /// itself is drawn by the screen (the live map), over the stage.
+    /// Earth and friends in rings of glass joined by necks of liquid glass (`WorldGlass`), the
+    /// globe (`centerpiece`, from the screen) over the glass, and the friends' photos on top.
     case v3
 }
 
@@ -46,6 +46,9 @@ struct BubbleStage: View {
     var backdrop: AnyView? = nil
     /// v3: the finger spinning everyone around Earth.
     var spin: SpinDial? = nil
+    /// v3: drawn between the glass and the photos (the globe), so pins sit on it and the glass
+    /// rings it.
+    var centerpiece: AnyView? = nil
     /// Starts on `scene` already settled instead of animating into it: v2's dome is simply there
     /// at launch (it used to swell out of the middle of the screen and bounce down), and v3's
     /// Earth waits at its own place, so its pool swells out from under the globe.
@@ -60,13 +63,14 @@ struct BubbleStage: View {
     private let people = Person.samples
 
     init(scene: OrbitScene, slot: CGRect? = nil, look: StageLook = .v1, lift: EarthLift? = nil,
-         backdrop: AnyView? = nil, spin: SpinDial? = nil, startsSettled: Bool = false) {
+         backdrop: AnyView? = nil, spin: SpinDial? = nil, centerpiece: AnyView? = nil, startsSettled: Bool = false) {
         self.scene = scene
         self.slot = slot
         self.look = look
         self.lift = lift
         self.backdrop = backdrop
         self.spin = spin
+        self.centerpiece = centerpiece
         self.startsSettled = startsSettled
         let engine = BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
         if startsSettled, let first = OrbitChoreography.keyframes(for: scene).first {
@@ -97,13 +101,16 @@ struct BubbleStage: View {
                                          metrics: metrics, size: proxy.size, backdrop: backdrop)
                     case .v3:
                         let turned = turnedBySpin(bubbles, at: time)
-                        FlatLiquidLayer(bubbles: turned, metrics: metrics)
+                        WorldGlass(bubbles: turned, metrics: metrics, size: proxy.size)
+                        if let centerpiece {
+                            centerpiece
+                        }
                         ForEach(turned.filter { WorldPhoto.hasPhoto($0.id) && WorldPhoto.radius(for: $0) > 0.25 }) { bubble in
                             let diameter = WorldPhoto.radius(for: bubble) * 2 * metrics.scale
-                            WorldDisc(image: WorldPhoto.image(for: bubble.id), diameter: diameter)
+                            WorldDisc(image: WorldPhoto.image(for: bubble.id), diameter: diameter,
+                                      edge: WorldPhoto.pinEdge(for: bubble))
                                 .position(metrics.point(bubble.center))
-                                // Bigger on top, so a bud's photo stays tucked under its parent's
-                                // until it has swollen out; melting away, it slips underneath.
+                                // Melting back into Earth, they slip under the others.
                                 .zIndex(bubble.isLeaving ? -1000 + bubble.depth : bubble.depth)
                         }
                     }
@@ -306,10 +313,13 @@ private struct GooLayer: View {
     }
 }
 
-/// v3: a photo as a sharp disc. Drawn at its real size each frame, so it stays crisp as it pops.
+/// v3: a photo as a sharp disc, with a pin's white edge while it sits on the globe. Drawn at its
+/// real size each frame, so it stays crisp as it pops and grows.
 private struct WorldDisc: View {
     let image: UIImage?
     let diameter: CGFloat
+    /// The pin's white edge, 0 to 1.
+    var edge: Double = 0
 
     var body: some View {
         Group {
@@ -318,11 +328,18 @@ private struct WorldDisc: View {
                     .resizable()
                     .scaledToFill()
             } else {
-                Theme.worldLiquid
+                Theme.worldGlass
             }
         }
         .frame(width: diameter, height: diameter)
         .clipShape(Circle())
+        .overlay {
+            if edge > 0.01 {
+                Circle()
+                    .strokeBorder(Color.white, lineWidth: max(1.5, diameter * 0.09))
+                    .opacity(edge)
+            }
+        }
     }
 }
 

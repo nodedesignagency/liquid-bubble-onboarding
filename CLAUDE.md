@@ -36,54 +36,63 @@ locally, but the session proxy refused to push tags).
 - **v2**: one screen in the style of the Wabi app (a video the user shared): swipe up a big glass
   Earth and your friends bubble out of it as liquid glass. The user said it was "way better" but
   looked the same as Wabi, so it is saved as is. See "v2" below.
-- **v3** (current): pull back from a real city to the whole Earth (after the Bump app's Earth
-  zoom, which the user loved), then friends pop out of Earth in one crisp body of flat liquid
-  (after a Yandex Music concept's pentagon the user circled). See "v3" below.
+- **v3** (current): dark; pull back from a real city to a glowing holographic globe (after the
+  Bump app's Earth zoom and the Blink app's globe), friends pinned on it lift off into orbit,
+  joined to Earth by necks of liquid glass (after the AiOS concept). See "v3" below.
 
 ## v3
 
-What the user asked for: keep the base idea (Earth, friends bubbling out as liquid) but make it
-look "out of the box", not like Wabi. Take Bump's Earth zoom, ideally reversed (start zoomed in,
-zoom out to Earth). Earth in the middle with 4-5 people/places popping out like the circled
-pentagon, then more out of those. They were not convinced by v1's blurriness or v2's liquid
-animation. "As we are using Swift, making glass should be easier" (native Liquid Glass). Style
-references they shared: the pentagon (flat light grey blob on white, discs at the lobes), a mini
-player with a glass album disc, a glass rounded square with chromatic red/blue rims on white, and
-two flow diagrams with flat pale grey liquid rails, soft fillets and little dots. Also, "just for
-fun", a Recollect paywall where thumbnails burst out of a central icon in 3D (not used yet).
+How it got here: the user asked for something "out of the box", not like Wabi: keep the base idea
+(Earth, friends bubbling out as liquid), take the Bump app's Earth zoom (ideally reversed: start
+zoomed in, pull back to Earth), Earth in the middle with 4-5 people popping out, more out of those.
+The first v3 (white page, flat grey liquid, map shrunk into a glass orb) they called "way way
+better", but: the jump from black space to the white page was "very bad", MapKit's tiles didn't load
+in time so the zoom was grey for three seconds, Earth went blurry once it shrank (Liquid Glass over
+a scaled map), and the flat liquid looked "cluttered and cheap". Their next references: Blink (a
+glowing holographic globe on black with friends pinned on it) and the AiOS concept (a dark dot
+grid, a central orb with four satellites joined by tapered liquid stems), "but liquid glass instead
+of flat colour". Not used yet: a Recollect paywall where thumbnails burst out of an icon in 3D.
 
-- Screen (`Orbit/Onboarding/WorldOnboardingView.swift`), white canvas (`Theme.worldCanvas`):
-  1. 0 s: MapKit satellite map with realistic elevation, full screen, at the Eiffel Tower from the
-     Champ de Mars (`EarthZoom.street`: 1.5 km, pitch 62, heading 330); fades in over 0.6 s.
-  2. 1.2 s: keyframe zoom out (`EarthZoom.plan`, 4.2 s): 12 distance keyframes even in log space,
-     eased at both ends; tilts to straight down by 62%, turns north up, drifts the centre to
-     28N 8E. "Everyone you love, / in one orbit." in white at 17% height from 4.4 s.
-  3. 5.5 s: camera pinned at `EarthZoom.space()` (30,000 km) and the globe measured on screen
-     (`EarthZoom.measure`: where points 25 and 55 degrees east of the centre land, fitted to a
-     perspective camera). 6.1 s: the map is cut to a circle closing onto the globe (0.985 of its
-     radius, dropping the atmosphere and dark limb) while it scales into the orb (radius 46 at
-     (0, -125), spring 0.85/0.86). The map sits in a square as tall as the screen so a globe wider
-     than the screen keeps its edges.
-  4. 7.2 s: `EarthGlass` fades in over the orb (real `.glassEffect(.clear)` on iOS 26, a highlight
-     and rim before), and the stage plays `.bloom`. Title 7.7, subtitle 8.0, buttons 8.8.
-  5. Drag around Earth spins everyone (`SpinDial`, coasts after release) and turns the globe with
-     them (map heading = minus the spin).
-  6. "Continue": melt back into Earth (`.space`), the globe grows back into space, uncut, and the
-     camera dives back into Paris, then the home screen (which shows the bloom, spinnable).
-- Bloom (`OrbitChoreography.petals`): Earth's pool (radius 55, the globe 46 inside it), five
-  friends (radius 34) at 94 in a pentagon, five more (22) at 140 in the valleys (places and
-  friends), four (18) at 170 on the friends' axes, six drops (5-7, no photo) at the tips. Each
-  bobs on a small circle so necks breathe; the drops pinch off and melt back.
-- Liquid (`Orbit/Bubbles/FlatLiquid.swift`, shader `flatLiquid`): smooth minimum of circle
-  distances (`blend` 38: joins when the gap is under about 19), photo liquid 26% past the photo,
-  crisp edge (0.6pt ramp), flat #EEEEF1, darkened 6% just inside the edge (`rim`; the user's flow
-  diagram references). Photos are sharp discs; `WorldPhoto.radius` pops them in once the liquid
-  has swollen to 30% (overshoot capped at 12%). Bigger photos on top; Earth (the map) over all.
-- Buttons: flat capsules, ink "Continue with Apple" and liquid-grey "Continue with phone number".
-- Place photos: `place-1` coffee, `place-2` concert, `place-3` beach, `place-4` lake, `place-5`
-  city at dusk (Unsplash).
-- Mocked first in Python (scratch, like the preview): a loose outer ring of separate small photos
-  read as scattered; pulling it in so it buds off the first five fixed that.
+- Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
+  #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The sequence waits on
+  loading, then everything after the handover is a function of time:
+  1. The city: a live `MKMapView` (`CityMapController`, realistic elevation) at the Eiffel Tower
+     (1.5 km, pitch 62, heading 330), under a dark cover that fades once MapKit reports the city
+     fully rendered (at most 6 s). As soon as the map has a size it estimates its scale and
+     `ZoomImagery` fetches satellite snapshots of the same spot (`MKMapSnapshotter`), each 3.2x
+     wider, up to 4,600 km (the first 1100pt at 3x, the rest 800pt at 2x). The city holds at least
+     1.5 s, and until the snapshots are in (at most 3.5 s more).
+  2. Rise (1.3 s, UIKit camera animation): pitch to 0, distance 2.6 km. Measure metres per point.
+  3. Zoom out (3.6 s, `ZoomPath`): scale eased in log space from the handover to the globe at
+     rest. `ZoomStack` draws the snapshots (the finest that covers the screen plus finer ones over
+     it, each feathered from 80% of its radius), turned by the map's heading and unwinding to
+     north up. When the coarsest snapshot stops covering, they dissolve into the globe, which
+     then drifts from the screen's middle to its place and turns from Paris to 25N 12E.
+  4. "Everyone you love, / in one orbit." under the globe; pins (`.pins`): Earth's glass seeps
+     out from under the globe and the four friends pop up as pins on their cities (London,
+     Dubai, Nairobi, Lagos; `OrbitChoreography.friendHomes`), with a white edge like Blink's.
+  5. Lift-off (`.bloom`): each pin grows into a friend in a ring of glass, in orbit at a corner
+     round Earth on its city's side, a neck of glass stretching from Earth's ring to it
+     (`GlassNeck`, the classic metaball connector), bobbing so the necks breathe. The dot grid
+     fades in, the copy becomes "Meet Orbit." / "Your friends, always within reach.", then a
+     white "Continue with Apple" and a glass "Continue with phone number".
+  6. Drag around Earth spins the friends (`SpinDial`) and turns the globe on its axis; it also
+     drifts 1.2 degrees a second. "Continue": friends melt into Earth, the zoom runs backwards
+     (3 s) into the snapshots and the map, the map tilts back up to the tower, then home.
+- Globe (`Orbit/Bubbles/HoloGlobe.swift`, shader `holoGlobe`): drawn per pixel, so it's sharp at
+  any size. Geometry `GlobeMath` (pinhole camera, `distance` in Earth radii; 9 at rest, globe
+  radius 84). Continents from `land-sdf` (a 4096x2048 signed distance field of Natural Earth's
+  10m land, built by `tools/globe/landsdf.py`; two calibration blocks in its top-left corner give
+  the coast level and scale, so colour conversion can't move the coastline). Pearl land with a
+  pastel sheen (pink, lilac, sky), raised (lit shore, shadowed sea behind), indigo sea, cool rim,
+  violet aura.
+- Glass (`Orbit/Bubbles/GlassNetwork.swift`): Earth's ring (radius 91 round the 84 globe), each
+  friend's ring (33, photo 28) and the necks, as real Liquid Glass in one `GlassEffectContainer`
+  on iOS 26 (each shape in a view sized to its bounds); a dark outline before. Layers: grid,
+  zoom, glass, globe (`BubbleStage`'s `centerpiece`), photos.
+- Engine additions: `BubbleTarget.popsInPlace` (pins appear on their city, not out of Earth),
+  `RenderedBubble.isAppearing` (photos pop only when appearing or leaving, not when a pin grows).
+- Mocked first in Python (scratch): four friends read cleaner than five, which crowded the edges.
 
 ## v2
 
@@ -154,7 +163,8 @@ fun", a Recollect paywall where thumbnails burst out of a central icon in 3D (no
 - Motion: the user now wants the reference's bounce (overshoot on arrivals and on the bloom),
   smooth elsewhere. Earlier "no bouncy springs" is superseded; still no jittery or rubbery idle.
 
-Tried and rejected; don't bring these back: emoji avatars, studio headshots, dark mode, aurora or
+Tried and rejected (for v1; v3 is dark because the user asked for it, after the Blink and AiOS
+references); don't bring these back: emoji avatars, studio headshots, dark mode, aurora or
 mesh-gradient backgrounds, glass chips, story-style progress bars, heavy headlines with an accent
 colored word, a round arrow CTA with a progress ring, a bottom-left paragraph, halos or vignettes
 that read as drop shadows, gel or glass lighting on the liquid (tried in a mock, read as a drop
@@ -188,13 +198,16 @@ edges, but wanted an original story, which is the current one.
 - `Orbit/Bubbles/OrbitChoreography.swift`: the layouts per scene, as keyframes, in a 372 x 480
   reference space centered on the stage. Bubble 0 is Earth, 1 you, 2 the friend you bump, 3-5
   your friends, 6-8 theirs, 9 one more for the ring; v2 adds 10-15, photo-less glass droplets
-  (v3's drops); v3 adds 16-20, places.
+; v3 uses Earth and 1-4.
 - `Orbit/Bubbles/GlassLiquid.swift`: v2's `GlassLiquidLayer` (photo layer, velocities, stretch),
   `EarthLift` (the swipe), `GlassPhoto` (photos at 95% of the orb, glow colours).
-- `Orbit/Bubbles/FlatLiquid.swift`: v3's `FlatLiquidLayer`, `WorldPhoto` (photos, pop), `SpinDial`.
-- `Orbit/Bubbles/EarthZoom.swift`: v3's map (`EarthMapView`), zoom keyframes, globe measuring,
-  `EarthGlass`.
-- `Orbit/Onboarding/WorldOnboardingView.swift`: the v3 screen, its sequence, copy and `WorldButton`.
+- `Orbit/Bubbles/EarthZoom.swift`: v3's city (`CityMapController`), snapshots (`ZoomImagery`),
+  `ZoomStack`, `ZoomPath`.
+- `Orbit/Bubbles/HoloGlobe.swift`: `GlobeState`, `HoloGlobeView` (the `holoGlobe` shader).
+- `Orbit/Bubbles/GlassNetwork.swift`: `WorldGlass`, `GlassNeck`, `WorldPhoto`, `SpinDial`.
+- `Orbit/Onboarding/WorldOnboardingView.swift`: the v3 screen, its sequence, copy, `DotGrid`,
+  `WorldButton`. `GlobeMath` (the globe's projection) is at the end of `OrbitChoreography.swift`
+  so the engine checks can use it.
 - `Orbit/Onboarding/GlassOnboardingView.swift`: the v2 screen, its copy, and `GlassButton`.
 - `Orbit/Bubbles/BubbleStage.swift`: the view. `GooLayer` draws the liquid with the `liquid` Metal
   shader (`Orbit/Bubbles/Liquid.metal`) through `.colorEffect`: discs and capsules with soft
@@ -207,7 +220,7 @@ edges, but wanted an original story, which is the current one.
   `SoftPhoto` (the feathered mask), `AvatarFace`, `EarthFace`.
 - `Orbit/Onboarding/`: copy (`OnboardingStep`), screen (`OnboardingView`), controls.
 - `Orbit/Theme/Theme.swift`: colors, including the liquid's light, base, deep and shade.
-- `Orbit/Assets.xcassets`: `earth`, `friend-1` (you) to `friend-9`, `place-1` to `place-5`.
+- `Orbit/Assets.xcassets`: `earth`, `friend-1` (you) to `friend-9`, `land-sdf` (v3's continents).
 
 SwiftUI gotchas learned on device:
 
@@ -240,19 +253,20 @@ SwiftUI gotchas learned on device:
 
 ## Open items
 
-- v3 was just built; waiting on the user's Simulator recording. None of it has been compiled (no
-  iOS SDK or Metal toolchain here): watch for MapKit API mismatches (`mapCameraKeyframeAnimator`,
-  `MapProxy.convert`, `MapCameraBounds`), the `flatLiquid` shader, and `.glassEffect(.clear)`.
-  Things to check on the recording: does the globe appear at 30,000 km, does the cut circle land
-  on its edge (if not, `EarthZoom.measure` or `limbCut`), do 3D tiles load in time on first launch,
-  and how the Liquid Glass on Earth looks.
-- MapKit's Apple Maps logo and Legal link are hidden once the map is cut to the globe, and are
-  off screen in the square the map sits in. Fine for a prototype; a shipping app must show them.
+- v3 was just rebuilt dark; waiting on the user's Simulator recording. Never compiled here:
+  watch the `holoGlobe` shader's texture argument, `Path.union`, `GlassEffectContainer`, and
+  the MapKit and snapshot calls. On the recording check: does the city wait until it's rendered,
+  are the snapshots in by the rise (else the zoom starts from coarser, softer imagery), how sharp
+  the zoom's edges are (the outer screen shows coarser snapshots), the dissolve into the globe,
+  pins on the right cities, and how the Liquid Glass necks look on the dark grid (and whether the
+  globe's aura over them muddies the glass).
+- MapKit's Apple Maps logo and Legal link show during the city but not in the snapshots.
+  A shipping app must credit the imagery wherever it is shown.
 - The Recollect "burst out of the icon in 3D" idea is unused; it could become the bloom's entrance.
 - v2's `glassLiquid` shader and `.glassEffect` buttons were confirmed working in the user's
   recording.
 - Globe: the NASA Earth photo has a dark rim and the user doesn't like it. v3 replaces it with
-  MapKit's live globe (cut inside its limb). v1 and v2 still use the photo; the earlier plan for
+  its own holographic globe shader. v1 and v2 still use the photo; the earlier plan for
   them was a pastel world texture from Magnific (the user's credits, so ask first) on a SceneKit
   sphere.
 - Page 1 uses a stock photo as "you"; the real app would use the user's own selfie.

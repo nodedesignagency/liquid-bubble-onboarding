@@ -225,36 +225,111 @@ static float orbHeight(float2 d, float r, float2 stretch, thread float2 &toward)
     return half4(mix(outside, inside, alpha));
 }
 
-/// v3: one crisp body of flat, pale liquid (used through `.colorEffect` in `FlatLiquidLayer`).
+/// v3's globe, like the Blink app's (used through `.colorEffect` in `HoloGlobeView`): a glowing
+/// holographic Earth on the dark page. Pearl continents with a pastel sheen (pink, lilac, sky) that
+/// shifts as it turns, raised a little (the shore facing the light catches it, the sea behind a
+/// shore lies in its shadow), on a deep indigo sea, with a cool rim and a soft violet aura around it.
 ///
-/// Every photo, drop and Earth's pool is a circle; their signed distances are joined with a
-/// smooth minimum (`blend`, in points), so neighbours closer than about half of it share one
-/// outline with soft, wide fillets between them, and a bubble drifting away pulls a neck that
-/// thins and pinches off cleanly. No blur: the edge is antialiased over about half a point.
-/// Inside, the colour is flat (`fill`), darkened a touch just inside the edge (`rim`, 0 for
-/// none), so the shape reads as a moulded surface like the user's flow-diagram references,
-/// without anything outside it that could read as a drop shadow.
-///
-/// `circles` holds 3 floats per circle: x, y, radius, in the view's points. Mirrored in
-/// `tools/preview/render_v3.py` (`flat_liquid`).
-[[ stitchable ]] half4 flatLiquid(float2 position, half4 color, float blend, float rim, float3 fill,
-                                  device const float *circles, int count) {
-    const int n = count / 3;
-    if (n == 0) {
-        return half4(0.0h);
+/// The geometry is `GlobeMath`: a unit sphere seen by a pinhole camera `frame.w` Earth radii from
+/// its centre, sized so its edge is `frame.z` points from `frame.xy`, turned so (`view.x`, `view.y`)
+/// (latitude, longitude, radians) faces you, and turned on screen by `view.z` (clockwise). The
+/// continents come from `land`, an equirectangular signed distance field (`land-sdf`), whose
+/// top-left corner holds two calibration blocks (the coast, and 2.26 px inland), so the coast level
+/// and scale are read from the texture whatever colour conversion it went through.
+/// `look`: holo strength, aura strength, opacity, time (for the sheen's drift).
+/// Mirrored in `tools/preview/globe.py`.
+static float landDistance(texture2d<half> land, sampler s, float2 uv, float coast, float unit) {
+    return (float(land.sample(s, uv).r) - coast) * unit;
+}
+
+[[ stitchable ]] half4 holoGlobe(float2 position, half4 color, texture2d<half> land,
+                                 float4 frame, float4 view, float4 look) {
+    const float2 centre = frame.xy;
+    const float radius = max(frame.z, 1.0);
+    const float dist = max(frame.w, 1.0001);
+    float2 p = position - centre;
+    const float cr = cos(view.z), sr = sin(view.z);
+    p = float2(p.x * cr + p.y * sr, -p.x * sr + p.y * cr);
+    const float r = length(p);
+    const float beyond = max(r - radius, 0.0);
+    const float aura = look.y * (0.42 * exp(-beyond / (0.30 * radius)) + 0.35 * exp(-beyond / (0.06 * radius)));
+    const float3 auraColour = float3(0.36, 0.40, 1.0);
+    const float edge = 1.0 - smoothstep(radius - 0.6, radius + 0.6, r);
+    if (edge <= 0.0) {
+        if (aura < 0.003) {
+            return half4(0.0h);
+        }
+        return half4(half3(auraColour * aura * look.z), half(min(aura, 1.0) * look.z));
     }
-    float d = 1e20;
-    for (int i = 0; i < n; i++) {
-        device const float *c = circles + i * 3;
-        const float di = distance(position, float2(c[0], c[1])) - c[2];
-        const float h = clamp(0.5 + 0.5 * (di - d) / blend, 0.0, 1.0);
-        d = mix(di, d, h) - blend * h * (1.0 - h);
-    }
-    const float alpha = clamp(0.5 - d / 0.6, 0.0, 1.0);
-    if (alpha <= 0.0) {
-        return half4(0.0h);
-    }
-    const float inner = max(-d, 0.0);
-    const float3 c = fill * (1.0 - rim * 0.06 * exp(-inner / 1.6));
-    return half4(half3(c * alpha), half(alpha));
+
+    // The ray through this pixel, from the camera at (0, 0, dist), y up.
+    const float focal = radius * sqrt(dist * dist - 1.0);
+    const float3 dir = normalize(float3(p.x / focal, -p.y / focal, -1.0));
+    const float od = dist * dir.z;
+    const float disc = max(od * od - (dist * dist - 1.0), 0.0);
+    const float t = -od - sqrt(disc);
+    const float3 P = float3(0.0, 0.0, dist) + t * dir;          // on the sphere, camera frame
+    const float3 V = -dir;
+
+    // Into Earth's frame: E = Ry(lon0) Rx(-lat0) P.
+    const float ca = cos(-view.x), sa = sin(-view.x);
+    const float cb = cos(view.y), sb = sin(view.y);
+    const float ey = P.y * ca - P.z * sa, ez = P.y * sa + P.z * ca;
+    const float3 E = float3(P.x * cb + ez * sb, ey, -P.x * sb + ez * cb);
+    const float lat = asin(clamp(E.y, -1.0, 1.0));
+    const float lon = atan2(E.x, E.z);
+    const float2 uv = float2((lon + M_PI_F) / (2.0 * M_PI_F), (M_PI_2_F - lat) / M_PI_F);
+
+    constexpr sampler s(coord::normalized, s_address::repeat, t_address::clamp_to_edge, filter::linear);
+    const float width = float(land.get_width()), height = float(land.get_height());
+    const float coast = float(land.sample(s, float2(2.0 / width, 2.0 / height)).r);
+    const float inland = float(land.sample(s, float2(6.0 / width, 2.0 / height)).r);
+    const float unit = 2.2588 / max(inland - coast, 1e-4);
+    const float sd = landDistance(land, s, uv, coast, unit);     // texture px, positive on land
+
+    // The light, from the top left and in front, along the surface (east, north) for the relief.
+    const float3 L = normalize(float3(-0.45, 0.55, 0.70));
+    const float ndl = dot(P, L);
+    const float3 Lt = L - ndl * P;
+    const float ty1 = Lt.y * ca - Lt.z * sa, tz1 = Lt.y * sa + Lt.z * ca;
+    const float3 T = float3(Lt.x * cb + tz1 * sb, ty1, -Lt.x * sb + tz1 * cb);
+    const float east = T.x * cos(lon) - T.z * sin(lon);
+    const float north = -T.x * sin(lat) * sin(lon) + T.y * cos(lat) - T.z * sin(lat) * cos(lon);
+    const float k = 5.0 / width;
+    const float2 nudge = float2(east / max(cos(lat), 0.2) * k, -north * k * 2.0);
+    const float toward = landDistance(land, s, uv + nudge, coast, unit);
+    const float away = landDistance(land, s, uv - nudge, coast, unit);
+
+    const float ndv = clamp(dot(P, V), 1e-3, 1.0);
+    const float texPerPoint = (width / (2.0 * M_PI_F)) * (dist - 1.0) / focal / ndv;
+    const float w = max(texPerPoint * 0.8, 0.35);
+    const float landMix = smoothstep(-w, w, sd);
+    const float fres = pow(1.0 - ndv, 3.0);
+
+    float3 ocean = float3(0.03 + 0.10 * fres, 0.05 + 0.15 * fres, 0.16 + 0.42 * fres);
+    ocean *= 0.75 + 0.35 * clamp(ndl, 0.0, 1.0);
+
+    const float phase = 1.3 * (1.0 - ndv) + 0.5 * E.x + 0.35 * E.y + 0.06 * look.w;
+    const float w4 = 0.5 + 0.5 * sin(2.0 * M_PI_F * phase);
+    const float w5 = 0.5 + 0.5 * sin(2.0 * M_PI_F * (phase * 0.7 + 0.31));
+    const float3 pink = float3(1.0, 0.80, 0.93), lilac = float3(0.82, 0.79, 1.0), sky = float3(0.74, 0.91, 1.0);
+    const float3 sheen = mix(mix(sky, pink, w4), lilac, 1.0 - w5);
+    const float3 pearl = float3(0.95, 0.95, 0.99);
+    float3 landColour = mix(pearl, sheen, 0.7 * look.x);
+    const float lit = smoothstep(0.0, 4.0, sd) * (1.0 - smoothstep(-2.0, 2.0, away));
+    const float shade = smoothstep(0.0, 4.0, sd) * (1.0 - smoothstep(-2.0, 2.0, toward));
+    landColour = landColour * (0.70 + 0.34 * clamp(ndl, 0.0, 1.0)) + 0.22 * lit - 0.16 * shade;
+    const float shadow = (1.0 - landMix) * smoothstep(-1.0, 3.0, toward) * 0.55;
+    ocean *= 1.0 - shadow;
+
+    float3 c = mix(ocean, landColour, landMix);
+    const float3 R = 2.0 * ndl * P - L;
+    const float spec = pow(clamp(dot(R, V), 0.0, 1.0), 40.0);
+    c += 0.22 * spec * (1.0 - landMix) * float3(0.85, 0.9, 1.0);
+    c += 0.55 * fres * float3(0.55, 0.62, 1.0);
+    c = clamp(c, 0.0, 1.0);
+
+    const float3 rgb = c * edge + auraColour * aura * (1.0 - edge);
+    const float alpha = max(edge, min(aura, 1.0));
+    return half4(half3(rgb * look.z), half(alpha * look.z));
 }

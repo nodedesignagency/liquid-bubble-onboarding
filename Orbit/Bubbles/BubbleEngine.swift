@@ -61,6 +61,9 @@ struct BubbleTarget {
     /// the bubble's target, so it swells out of the surface and pinches off. Set on the appearing
     /// bubble's target.
     var budsFromSurface = false
+    /// Appear right where it is going, swelling in place, instead of budding out of the anchor
+    /// (v3's pins popping up on their cities). Set on the appearing bubble's target.
+    var popsInPlace = false
 }
 
 /// A thin string of liquid joining two bubbles. Time it to form just as a budding bubble would
@@ -107,6 +110,8 @@ struct RenderedBubble: Identifiable {
     /// or breathing: its full size while it appears, settles or melts away. v3 pops each photo in
     /// once its liquid has swollen to part of this.
     var fullRadius: CGFloat = 0
+    /// Swelling out of nothing (it was hidden), as opposed to growing from a size it already had.
+    var isAppearing = false
 }
 
 struct RenderedThread {
@@ -220,6 +225,11 @@ final class BubbleEngine {
                 track.move = target.jelly ? .budBouncy : .bud
                 track.grow = target.jelly ? .inflateBouncy : .inflate
                 track.fromSurface = target.budsFromSurface && track.fromAnchor != nil
+                if target.popsInPlace {
+                    track.from.center = target.center
+                    track.fromAnchor = nil
+                    track.fromSurface = false
+                }
                 if track.fromSurface {
                     // Swell against the surface first, then pull away, so the neck has time to show.
                     track.moveStart = start + 0.3
@@ -286,7 +296,8 @@ final class BubbleEngine {
             return RenderedBubble(id: id, center: center, radius: radius, tint: pose.tint,
                                   depth: Double(pose.radius) + Double(id) * 0.001,
                                   isLeaving: tracks[id].to.radius < 1 && tracks[id].toAnchor != nil,
-                                  fullRadius: max(tracks[id].from.radius, tracks[id].to.radius))
+                                  fullRadius: max(tracks[id].from.radius, tracks[id].to.radius),
+                                  isAppearing: tracks[id].from.radius < 1 && tracks[id].to.radius >= 1)
         }
     }
 

@@ -1,7 +1,7 @@
 import Foundation
 
 func fmt(_ p: CGPoint) -> String { String(format: "(%.1f, %.1f)", Double(p.x), Double(p.y)) }
-let scenes: [OrbitScene] = [.you, .bump, .circle, .world, .collapse, .gate, .reveal, .space, .bloom]
+let scenes: [OrbitScene] = [.you, .bump, .circle, .world, .collapse, .gate, .reveal, .space, .pins, .bloom]
 var failures = 0
 func check(_ ok: Bool, _ msg: String) { if !ok { failures += 1; print("FAIL:", msg) } }
 
@@ -45,10 +45,10 @@ for scene in scenes {
     // v1's liquid reaches about 24% past a photo and its stage sits between header and footer.
     // v2 has only a 5pt glow around the glass and its stage is the whole screen (about 400
     // reference points above and below the centre on an iPhone 17 Pro).
-    // v3's stage is the whole screen too; its liquid reaches 26% past a photo, and everyone bobs by up to 7.
+    // v3's stage is the whole screen too; a bubble's radius is its glass, and friends bob by 4.
     let isV2 = [OrbitScene.gate, .reveal].contains(scene)
-    let isV3 = [OrbitScene.space, .bloom].contains(scene)
-    let reach = { (b: RenderedBubble) in isV2 ? b.radius + 5 : isV3 ? b.radius * (1 + OrbitChoreography.photoMargin) + 7 : b.radius * 1.24 }
+    let isV3 = [OrbitScene.space, .pins, .bloom].contains(scene)
+    let reach = { (b: RenderedBubble) in isV2 ? b.radius + 5 : isV3 ? b.radius + 4 : b.radius * 1.24 }
     let limit: CGFloat = isV2 || isV3 ? 395 : 242
     let tooTall = visible.filter { abs($0.center.y) + reach($0) > limit && abs($0.center.x) - $0.radius < 201 && abs($0.center.y) <= limit - 2 }
     let offSide = visible.filter { abs($0.center.x) + reach($0) > 201 && abs($0.center.x) - $0.radius < 201 }
@@ -101,46 +101,42 @@ do {
     check(sometimes.count >= 3, "reveal: the cluster hardly ever melts together")
 }
 
-// 1e. v3: the bloom is one body of liquid that breathes. Its smooth union joins two shapes when
-//     the gap between their liquid edges is under half the blend (`FlatLiquidLayer.blend`, 38).
-func v3Liquid(_ b: RenderedBubble) -> CGFloat {
-    if b.id == OrbitChoreography.earth || OrbitChoreography.droplets.contains(b.id) { return b.radius }
-    return b.radius * (1 + OrbitChoreography.photoMargin)
-}
+// 1e. v3: pins sit on the globe's visible face, inside Earth's glass (so no neck shows while they
+//     are pinned); in orbit, every friend stays within reach of a glass neck to Earth as they bob
+//     (`GlassNeck`: further than |r1 - r2| apart and closer than r1 + 2.5 r2).
 do {
-    let joinGap: CGFloat = 19
-    let player = Player(); player.play(.space, at: 0); _ = player.frame(1)
-    player.play(.bloom, at: 1)
-    var pairs = [String: Int]()
-    var groupsSeen = Set<Int>()
-    let steps = 1200
-    for step in 0..<steps {
-        let s = player.frame(6 + Double(step) / 20).filter { $0.radius >= 1 }
-        // Union-find over joined pairs, to count separate bodies of liquid.
-        var parent = Dictionary(uniqueKeysWithValues: s.map { ($0.id, $0.id) })
-        func root(_ i: Int) -> Int { var i = i; while parent[i]! != i { i = parent[i]! }; return i }
-        for i in s.indices { for j in s.indices where j > i {
-            let gap = hypot(s[i].center.x - s[j].center.x, s[i].center.y - s[j].center.y) - v3Liquid(s[i]) - v3Liquid(s[j])
-            if gap < joinGap {
-                pairs["\(s[i].id)-\(s[j].id)", default: 0] += 1
-                parent[root(s[i].id)] = root(s[j].id)
-            }
-        }}
-        groupsSeen.insert(Set(s.map { root($0.id) }).count)
+    for home in OrbitChoreography.friendHomes {
+        let face = GlobeMath.project(latitude: home.latitude, longitude: home.longitude,
+                                     facing: OrbitChoreography.globeView.latitude, OrbitChoreography.globeView.longitude,
+                                     distance: OrbitChoreography.globeView.distance)
+        check(face.visible, "pins: friend \(home.id) is on the far side of the globe")
+        let r = hypot(face.x, face.y) * OrbitChoreography.globeRadius
+        check(r + OrbitChoreography.pinRadius < OrbitChoreography.bloomEarth.radius - 1,
+              "pins: friend \(home.id) pokes out of Earth's glass")
     }
-    let always = pairs.filter { $0.value == steps }.keys.sorted()
-    let sometimes = pairs.filter { $0.value > 20 && $0.value < steps - 20 }.keys.sorted()
-    print("  bloom: always joined: \(always.joined(separator: " "))")
-    print("  bloom: join and let go over a minute: \(sometimes.joined(separator: " "))")
-    print("  bloom: separate bodies of liquid over a minute: \(groupsSeen.sorted())")
-    check(sometimes.count >= 4, "bloom: the necks hardly ever breathe")
-    check((groupsSeen.min() ?? 99) <= 3, "bloom: never comes together as one body")
+    let player = Player(); player.play(.space, at: 0); _ = player.frame(1)
+    player.play(.pins, at: 1); _ = player.frame(3)
+    player.play(.bloom, at: 3)
+    var nearest = CGFloat.infinity, farthest: CGFloat = 0
+    for step in 0..<1200 {
+        let s = player.frame(6 + Double(step) / 20)
+        let e = s[OrbitChoreography.earth]
+        for home in OrbitChoreography.friendHomes {
+            let f = s[home.id]
+            let d = hypot(f.center.x - e.center.x, f.center.y - e.center.y)
+            nearest = min(nearest, d); farthest = max(farthest, d)
+            check(d > abs(e.radius - f.radius) && d < e.radius + 2.5 * f.radius, "bloom: friend \(home.id) out of the neck's reach at \(d)")
+        }
+    }
+    print(String(format: "  bloom: friends between %.1f and %.1f from Earth (necks reach %.1f to %.1f)", Double(nearest), Double(farthest),
+                 Double(OrbitChoreography.bloomEarth.radius - OrbitChoreography.friendRadius),
+                 Double(OrbitChoreography.bloomEarth.radius + 2.5 * OrbitChoreography.friendRadius)))
 }
 
 // 2. Every ordered pair of scenes, interrupted mid-flight: no NaN, nothing teleports.
 // The two versions never mix in the app (each has its own onboarding screen), so each version's
 // scenes are interrupted only by its own.
-let families: [[OrbitScene]] = [[.you, .bump, .circle, .world, .collapse], [.gate, .reveal], [.space, .bloom]]
+let families: [[OrbitScene]] = [[.you, .bump, .circle, .world, .collapse], [.gate, .reveal], [.space, .pins, .bloom]]
 var maxJump: CGFloat = 0, maxJumpV2: CGFloat = 0, maxJumpV3: CGFloat = 0
 for family in families { for a in family { for b in family { for c in family where c != b {
     let player = Player()

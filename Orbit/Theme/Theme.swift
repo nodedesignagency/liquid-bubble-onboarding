@@ -19,11 +19,14 @@ enum Theme {
     static let glassCanvas = Color(hex: 0xEDEDEF)
     static let glassCanvasRGB = (r: Float(0xED) / 255, g: Float(0xED) / 255, b: Float(0xEF) / 255)
 
-    /// v3: a white page, and one pale, cool grey liquid on it, flat like the pentagon in the
-    /// Yandex Music concept the user circled. The photos and Earth are the only colour.
-    static let worldCanvas = Color.white
-    static let worldLiquid = Color(hex: 0xEEEEF1)
-    static let worldLiquidRGB = (r: Float(0xEE) / 255, g: Float(0xEE) / 255, b: Float(0xF1) / 255)
+    /// v3: dark all the way through, from space to the end (the user disliked the jump from black
+    /// to white): a near-black page with a faint dot grid, white type, the glowing globe and the
+    /// photos the only colour, like the Blink and AiOS references.
+    static let worldCanvas = Color(hex: 0x040406)
+    static let worldInk = Color(hex: 0xF5F5F7)
+    static let worldInkSecondary = Color(hex: 0x8E8E93)
+    /// The glass's colour where Liquid Glass isn't available (before iOS 26).
+    static let worldGlass = Color(hex: 0x16161A)
 }
 
 extension Color {

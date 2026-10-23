@@ -8,8 +8,6 @@ struct OrbitApp: App {
                 // SF Pro Rounded everywhere.
                 .fontDesign(.rounded)
                 .tint(Theme.ink)
-                // Designed light-only, like the reference.
-                .preferredColorScheme(.light)
         }
     }
 }
@@ -48,6 +46,9 @@ struct RootView: View {
             }
         }
         .background(canvas.ignoresSafeArea())
+        // v1 and v2 are light-only, like their references; v3 is dark all the way through (white
+        // status bar, dark Liquid Glass).
+        .preferredColorScheme(version == .v3 ? .dark : .light)
     }
 
     private var canvas: Color {
