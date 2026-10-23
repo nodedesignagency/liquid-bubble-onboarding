@@ -2,6 +2,13 @@ import Foundation
 
 func fmt(_ p: CGPoint) -> String { String(format: "(%.1f, %.1f)", Double(p.x), Double(p.y)) }
 let scenes: [OrbitScene] = [.you, .bump, .circle, .world, .collapse, .gate, .reveal, .space, .pins, .bloom]
+    + (1...9).map { OrbitScene.focus($0) }
+func isV3(_ scene: OrbitScene) -> Bool {
+    switch scene {
+    case .space, .pins, .bloom, .focus: true
+    default: false
+    }
+}
 var failures = 0
 func check(_ ok: Bool, _ msg: String) { if !ok { failures += 1; print("FAIL:", msg) } }
 
@@ -47,7 +54,7 @@ for scene in scenes {
     // reference points above and below the centre on an iPhone 17 Pro).
     // v3's stage is the whole screen too; a bubble's radius is its glass, and friends bob by 4.
     let isV2 = [OrbitScene.gate, .reveal].contains(scene)
-    let isV3 = [OrbitScene.space, .pins, .bloom].contains(scene)
+    let isV3 = isV3(scene)
     let reach = { (b: RenderedBubble) in isV2 ? b.radius + 5 : isV3 ? b.radius + 4 : b.radius * 1.24 }
     let limit: CGFloat = isV2 || isV3 ? 395 : 242
     let tooTall = visible.filter { abs($0.center.y) + reach($0) > limit && abs($0.center.x) - $0.radius < 201 && abs($0.center.y) <= limit - 2 }
@@ -102,41 +109,75 @@ do {
 }
 
 // 1e. v3: pins sit on the globe's visible face, inside Earth's glass (so no neck shows while they
-//     are pinned); in orbit, every friend stays within reach of a glass neck to Earth as they bob
-//     (`GlassNeck`: further than |r1 - r2| apart and closer than r1 + 2.5 r2).
+//     are pinned). In every constellation (Earth's, and each friend's after a tap), everyone round
+//     the middle stays within reach of a glass neck to it as they bob (`GlassNeck`: further than
+//     |r1 - r2| apart and closer than r1 + 2.5 r2), clear of their neighbours, inside the screen
+//     sideways (201 either side), below the status bar, and above the copy (`copyTop` 66).
 do {
-    for home in OrbitChoreography.friendHomes {
-        let face = GlobeMath.project(latitude: home.latitude, longitude: home.longitude,
+    for id in OrbitChoreography.homeCircle {
+        let person = OrbitChoreography.people.first { $0.id == id }!
+        let face = GlobeMath.project(latitude: person.latitude, longitude: person.longitude,
                                      facing: OrbitChoreography.globeView.latitude, OrbitChoreography.globeView.longitude,
                                      distance: OrbitChoreography.globeView.distance)
-        check(face.visible, "pins: friend \(home.id) is on the far side of the globe")
+        check(face.visible, "pins: \(person.city) is on the far side of the globe")
         let r = hypot(face.x, face.y) * OrbitChoreography.globeRadius
         check(r + OrbitChoreography.pinRadius < OrbitChoreography.bloomEarth.radius - 1,
-              "pins: friend \(home.id) pokes out of Earth's glass")
+              "pins: \(person.city) pokes out of Earth's glass")
     }
-    let player = Player(); player.play(.space, at: 0); _ = player.frame(1)
-    player.play(.pins, at: 1); _ = player.frame(3)
-    player.play(.bloom, at: 3)
-    var nearest = CGFloat.infinity, farthest: CGFloat = 0
-    for step in 0..<1200 {
-        let s = player.frame(6 + Double(step) / 20)
-        let e = s[OrbitChoreography.earth]
-        for home in OrbitChoreography.friendHomes {
-            let f = s[home.id]
-            let d = hypot(f.center.x - e.center.x, f.center.y - e.center.y)
-            nearest = min(nearest, d); farthest = max(farthest, d)
-            check(d > abs(e.radius - f.radius) && d < e.radius + 2.5 * f.radius, "bloom: friend \(home.id) out of the neck's reach at \(d)")
+    let pins = OrbitChoreography.homeCircle.map(OrbitChoreography.pinCenter(of:))
+    for i in pins.indices { for j in pins.indices where j > i {
+        let gap = hypot(pins[i].x - pins[j].x, pins[i].y - pins[j].y) - 2 * OrbitChoreography.pinRadius
+        check(gap > 2, "pins: \(OrbitChoreography.homeCircle[i]) and \(OrbitChoreography.homeCircle[j]) overlap (gap \(gap))")
+    }}
+    for id in 1...9 {
+        let friends = OrbitChoreography.friends(of: id)
+        check(Set(friends).count == friends.count && !friends.contains(id), "friends of \(id): \(friends)")
+        for other in friends {
+            check(OrbitChoreography.friends(of: other).contains(id), "friendship \(id)-\(other) goes one way")
         }
     }
-    print(String(format: "  bloom: friends between %.1f and %.1f from Earth (necks reach %.1f to %.1f)", Double(nearest), Double(farthest),
-                 Double(OrbitChoreography.bloomEarth.radius - OrbitChoreography.friendRadius),
-                 Double(OrbitChoreography.bloomEarth.radius + 2.5 * OrbitChoreography.friendRadius)))
+    for center in [OrbitChoreography.earth] + Array(1...9) {
+        let scene: OrbitScene = center == OrbitChoreography.earth ? .bloom : .focus(center)
+        let player = Player(); player.play(.space, at: 0); _ = player.frame(1)
+        player.play(.pins, at: 1); _ = player.frame(3)
+        player.play(.bloom, at: 3); _ = player.frame(6)
+        player.play(scene, at: 6)
+        let circle = center == OrbitChoreography.earth ? OrbitChoreography.homeCircle : [OrbitChoreography.earth] + OrbitChoreography.friends(of: center)
+        var nearest = CGFloat.infinity, farthest: CGFloat = 0, tightest = CGFloat.infinity, lowest = -CGFloat.infinity
+        var bad = Set<String>()
+        for step in 0..<1200 {
+            let s = player.frame(10 + Double(step) / 20)
+            let hub = s[center]
+            for id in circle {
+                let f = s[id]
+                let d = hypot(f.center.x - hub.center.x, f.center.y - hub.center.y)
+                nearest = min(nearest, d); farthest = max(farthest, d)
+                lowest = max(lowest, f.center.y + f.radius)
+                if !(d > abs(hub.radius - f.radius) && d < hub.radius + 2.5 * f.radius) { bad.insert("\(id) out of the neck's reach") }
+                if abs(f.center.x) + f.radius > 201 { bad.insert("\(id) off the side") }
+                if f.center.y - f.radius < -330 { bad.insert("\(id) under the status bar") }
+                if f.center.y + f.radius > 62 { bad.insert("\(id) in the copy") }
+                for other in circle where other > id {
+                    let g = s[other]
+                    let gap = hypot(f.center.x - g.center.x, f.center.y - g.center.y) - f.radius - g.radius
+                    tightest = min(tightest, gap)
+                    if gap < 6 { bad.insert("\(id) and \(other) touch") }
+                }
+            }
+            let strays = s.filter { $0.radius > 0.5 && $0.id != center && !circle.contains($0.id) && $0.id <= 9 }
+            if !strays.isEmpty { bad.insert("strays \(strays.map(\.id))") }
+        }
+        print(String(format: "  %@: %d round the middle, %.1f to %.1f from it, closest neighbours %.1f apart, lowest glass at %.1f",
+                     "\(scene)", circle.count, Double(nearest), Double(farthest), Double(tightest), Double(lowest)))
+        check(bad.isEmpty, "\(scene): \(bad.sorted().joined(separator: ", "))")
+    }
 }
 
 // 2. Every ordered pair of scenes, interrupted mid-flight: no NaN, nothing teleports.
 // The two versions never mix in the app (each has its own onboarding screen), so each version's
 // scenes are interrupted only by its own.
-let families: [[OrbitScene]] = [[.you, .bump, .circle, .world, .collapse], [.gate, .reveal], [.space, .pins, .bloom]]
+let families: [[OrbitScene]] = [[.you, .bump, .circle, .world, .collapse], [.gate, .reveal],
+                                [.space, .pins, .bloom, .focus(6), .focus(8), .focus(2)]]
 var maxJump: CGFloat = 0, maxJumpV2: CGFloat = 0, maxJumpV3: CGFloat = 0
 for family in families { for a in family { for b in family { for c in family where c != b {
     let player = Player()

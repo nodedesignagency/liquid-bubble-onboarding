@@ -28,6 +28,9 @@ struct SpringCurve {
     /// back): a 10% bounce on a radius that changes by 190pt dipped Earth almost to nothing before
     /// it popped back. This settles with a hint of give instead.
     static let swell = SpringCurve(response: 0.7, dampingRatio: 0.82)
+    /// v3: the swipe-up dome rising into view over the city, and sweeping up off the screen.
+    static let domeIn = SpringCurve(response: 0.8, dampingRatio: 0.8)
+    static let domeOut = SpringCurve(response: 0.7, dampingRatio: 0.92)
     /// v2: Earth settling back after the finger lets go, with a little give.
     static let liftSettle = SpringCurve(response: 0.6, dampingRatio: 0.72)
     /// Pulls a bubble back into its parent.

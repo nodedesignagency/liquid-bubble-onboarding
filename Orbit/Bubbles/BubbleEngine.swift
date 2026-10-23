@@ -41,7 +41,8 @@ struct BubbleTarget {
     /// Zero hides the bubble.
     var radius: CGFloat = 0
     var tint: GooTint = .liquid
-    /// A hidden bubble sits inside this bubble, so it buds out of it and melts back into it.
+    /// A hidden bubble sits inside this bubble, so it buds out of it and melts back into it. On a
+    /// target that is appearing, it names the bubble to bud out of.
     var anchor: Int?
     /// Wait before the bubble starts, when it is appearing.
     var appearDelay: Double = 0
@@ -112,6 +113,8 @@ struct RenderedBubble: Identifiable {
     var fullRadius: CGFloat = 0
     /// Swelling out of nothing (it was hidden), as opposed to growing from a size it already had.
     var isAppearing = false
+    /// Shrinking to nothing, whether or not it melts into another bubble.
+    var isVanishing = false
 }
 
 struct RenderedThread {
@@ -206,7 +209,9 @@ final class BubbleEngine {
             var track = Track(
                 from: current[id],
                 to: Pose(center: target.center, radius: target.radius, tint: target.tint),
-                fromAnchor: isHidden ? (previous.toAnchor ?? previous.fromAnchor) : nil,
+                // A bubble appearing buds out of the anchor its new target names, if any (v3: a
+                // friend's friends bud out of them), else out of the one it was hidden in.
+                fromAnchor: isHidden ? ((willShow ? target.anchor : nil) ?? previous.toAnchor ?? previous.fromAnchor) : nil,
                 toAnchor: willShow ? nil : target.anchor,
                 moveStart: now + target.moveDelay * delayScale,
                 growStart: now + target.moveDelay * delayScale,
@@ -297,7 +302,8 @@ final class BubbleEngine {
                                   depth: Double(pose.radius) + Double(id) * 0.001,
                                   isLeaving: tracks[id].to.radius < 1 && tracks[id].toAnchor != nil,
                                   fullRadius: max(tracks[id].from.radius, tracks[id].to.radius),
-                                  isAppearing: tracks[id].from.radius < 1 && tracks[id].to.radius >= 1)
+                                  isAppearing: tracks[id].from.radius < 1 && tracks[id].to.radius >= 1,
+                                  isVanishing: tracks[id].from.radius >= 1 && tracks[id].to.radius < 1)
         }
     }
 

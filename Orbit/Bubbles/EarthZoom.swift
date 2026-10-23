@@ -32,11 +32,16 @@ enum EarthZoom {
     static var handoffCamera: MKMapCamera {
         MKMapCamera(lookingAtCenter: city, fromDistance: handoffDistance, pitch: 0, heading: heading)
     }
+    /// Halfway through the rise: rendered once while the city is still covered, with the other two,
+    /// so the rise never shows ground MapKit hasn't loaded (the user saw grey wedges open up).
+    static var midCamera: MKMapCamera {
+        MKMapCamera(lookingAtCenter: city, fromDistance: (startDistance + handoffDistance) / 2, pitch: startPitch / 2, heading: heading)
+    }
 
     /// Seconds: the city flattening and rising, the zoom out to the globe, and the zoom back in.
     static let rise: Double = 1.3
-    static let zoomOut: Double = 3.6
-    static let zoomBack: Double = 3.0
+    static let zoomOut: Double = 4.6
+    static let zoomBack: Double = 3.4
     /// The map's heading turns the snapshots and the globe on screen at first; this unwinds to
     /// north up over the first three quarters of the zoom.
     static var startRoll: Double { 360 - heading }
@@ -58,14 +63,20 @@ enum EarthZoom {
 
 // MARK: - The city
 
-/// Owns the live map, reports when the city has fully rendered, measures its scale, and moves its
-/// camera with UIKit animations.
+/// Owns the live map, reports when the view it was last given has fully rendered, measures its
+/// scale, and moves its camera with UIKit animations. It starts at the handover camera, so the
+/// screen can render the rise's cameras one by one behind its cover (see `jump(to:)`) before
+/// showing the start.
 final class CityMapController: NSObject, MKMapViewDelegate {
     let mapView = MKMapView(frame: .zero)
-    /// The city at the start camera has fully rendered.
+    /// The camera last jumped to has fully rendered.
     private(set) var isRendered = false
-    /// Metres per screen point at the handover camera, estimated as soon as the map has a size
-    /// (from the start camera: across the middle, pitch doesn't change the horizontal scale).
+    /// MapKit started drawing since the last jump. It doesn't when it already has the view, so
+    /// `isReady` stops waiting shortly after a jump that never started rendering.
+    private var startedRendering = false
+    private var jumpedAt = Date.timeIntervalSinceReferenceDate
+    /// Metres per screen point at the handover camera, measured as soon as the map has a size
+    /// (across the middle, pitch doesn't change the horizontal scale).
     private(set) var handoffEstimate: Double?
 
     override init() {
@@ -76,10 +87,24 @@ final class CityMapController: NSObject, MKMapViewDelegate {
         mapView.showsCompass = false
         mapView.showsScale = false
         mapView.pointOfInterestFilter = .excludingAll
-        mapView.camera = EarthZoom.startCamera
+        mapView.camera = EarthZoom.handoffCamera
+    }
+
+    /// Shows `camera` at once; `isRendered` turns true again once MapKit has drawn it all.
+    func jump(to camera: MKMapCamera) {
+        isRendered = false
+        startedRendering = false
+        jumpedAt = Date.timeIntervalSinceReferenceDate
+        mapView.camera = camera
+    }
+
+    /// The camera last jumped to is on screen in full: rendered, or never needed rendering.
+    var isReady: Bool {
+        isRendered || (!startedRendering && Date.timeIntervalSinceReferenceDate - jumpedAt > 0.8)
     }
 
     func mapViewWillStartRenderingMap(_ mapView: MKMapView) {
+        startedRendering = true
         estimateIfNeeded()
     }
 
@@ -194,8 +219,9 @@ final class ZoomImagery {
 }
 
 /// The snapshots, zoomed to `metersPerPoint` with the city at `center`: the finest one that still
-/// covers the screen, and every finer one over it, each fading out toward its edge so it melts into
-/// the coarser one under it.
+/// covers the screen, and the finer ones over it fading out as they shrink below covering it.
+/// Apple's imagery is graded differently at each span, so a finer snapshot left sitting in the
+/// middle read as a patch that hadn't loaded; crossfading from one span to the next doesn't.
 struct ZoomStack: View {
     var levels: [ZoomImagery.Level]
     var metersPerPoint: Double
@@ -204,35 +230,49 @@ struct ZoomStack: View {
     var center: CGPoint
     var size: CGSize
 
-    /// A level covers the screen while its solid middle (80% of its radius) reaches the corners.
-    static func drawn(_ levels: [ZoomImagery.Level], metersPerPoint: Double, diagonal: CGFloat) -> [ZoomImagery.Level] {
-        let sides = levels.map { $0.side * CGFloat($0.metersPerPoint / metersPerPoint) }
-        let base = sides.firstIndex { $0 * 0.8 >= diagonal } ?? (levels.count - 1)
+    struct Layer: Identifiable {
+        let level: ZoomImagery.Level
+        let opacity: Double
+        let isBase: Bool
+        var id: Double { level.metersPerPoint }
+    }
+
+    /// Coarsest first. A level covers the screen while its solid middle (80% of its radius)
+    /// reaches the corners; a finer one fades out between covering and covering half.
+    static func layers(_ levels: [ZoomImagery.Level], metersPerPoint: Double, diagonal: CGFloat) -> [Layer] {
+        let cover = levels.map { Double($0.side) * $0.metersPerPoint / metersPerPoint * 0.8 / Double(diagonal) }
+        let base = cover.firstIndex { $0 >= 1 } ?? (levels.count - 1)
         guard base >= 0 else { return [] }
-        // Coarsest first: the base, then finer ones over it while they are still worth drawing.
-        return (0...base).reversed().filter { $0 == base || sides[$0] > 6 }.map { levels[$0] }
+        var out = [Layer(level: levels[base], opacity: 1, isBase: true)]
+        for index in stride(from: base - 1, through: 0, by: -1) {
+            let fade = ZoomPath.ease((log(max(cover[index], 1e-6)) - log(0.5)) / (log(1.0) - log(0.5)))
+            if fade > 0.01 {
+                out.append(Layer(level: levels[index], opacity: fade, isBase: false))
+            }
+        }
+        return out
     }
 
     var body: some View {
         let diagonal = hypot(size.width, size.height)
-        let shown = Self.drawn(levels, metersPerPoint: metersPerPoint, diagonal: diagonal)
         ZStack {
-            ForEach(Array(shown.enumerated()), id: \.offset) { index, level in
-                let k = CGFloat(level.metersPerPoint / metersPerPoint)
-                let side = level.side * k
-                Image(uiImage: level.image)
+            ForEach(Self.layers(levels, metersPerPoint: metersPerPoint, diagonal: diagonal)) { layer in
+                let k = CGFloat(layer.level.metersPerPoint / metersPerPoint)
+                let side = layer.level.side * k
+                Image(uiImage: layer.level.image)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: side, height: side)
                     .mask {
-                        if index == 0 {
+                        if layer.isBase {
                             Rectangle()
                         } else {
-                            RadialGradient(stops: [.init(color: .black, location: 0.8), .init(color: .clear, location: 1)],
+                            RadialGradient(stops: [.init(color: .black, location: 0.45), .init(color: .clear, location: 1)],
                                            center: .center, startRadius: 0, endRadius: side / 2)
                         }
                     }
-                    .position(x: center.x - level.cityOffset.x * k, y: center.y - level.cityOffset.y * k)
+                    .opacity(layer.opacity)
+                    .position(x: center.x - layer.level.cityOffset.x * k, y: center.y - layer.level.cityOffset.y * k)
             }
         }
         .frame(width: size.width, height: size.height)
@@ -245,19 +285,24 @@ struct ZoomStack: View {
 
 /// The zoom from the handover to the globe at rest, as a function of its progress `u` (0 at the
 /// handover, 1 at rest; the zoom back runs it backwards). Scale is eased in log space, so rooftops
-/// to orbit keep one steady sense of speed.
+/// to orbit keep one steady sense of speed, except that it slows while the globe sweeps out from
+/// the city over the snapshots (a glowing ring turning the real Earth into the globe), so that
+/// moment reads.
 struct ZoomPath {
     /// Metres per point at the handover (measured on the map) and of the globe at rest.
     var startScale: Double
     var endScale: Double
-    /// The snapshots dissolve into the globe between these scales (the coarsest snapshot stops
-    /// covering the screen at the second).
-    var globeFrom: Double
-    var globeTo: Double
+    /// The globe sweeps out from the city between these scales; at the second the coarsest
+    /// snapshot stops covering the screen, and the globe has it all.
+    var revealFrom: Double
+    var revealTo: Double
     /// The globe at rest, on screen.
     var rest: GlobeState
-    /// The screen's middle, where the city is during the zoom.
+    /// The screen's middle, where the city is during the zoom, and how far the sweep must reach.
     var screenCenter: CGPoint
+    var reach: CGFloat
+    /// How far through the zoom (in log scale) at each of 257 even steps of `u`.
+    private var depths: [Double] = []
 
     /// The camera's focal length for the globe, in points: fixed, so it pulls back like a camera.
     var focal: CGFloat { rest.radius * CGFloat((rest.distance * rest.distance - 1).squareRoot()) }
@@ -265,19 +310,39 @@ struct ZoomPath {
     init(startScale: Double, levels: [ZoomImagery.Level], rest: GlobeState, size: CGSize) {
         self.rest = rest
         screenCenter = CGPoint(x: size.width / 2, y: size.height / 2)
+        reach = hypot(size.width, size.height) / 2 + 40
         let focal = Double(rest.radius) * (rest.distance * rest.distance - 1).squareRoot()
         self.startScale = startScale
         endScale = EarthZoom.earthRadius * (rest.distance - 1) / focal
         let diagonal = Double(hypot(size.width, size.height))
         if let coarsest = levels.last {
             let leaves = coarsest.metersPerPoint * Double(coarsest.side) * 0.8 / diagonal
-            globeTo = max(leaves, startScale * 1.5)
-            globeFrom = globeTo / 1.6
+            revealTo = max(leaves, startScale * 2)
         } else {
-            // No snapshots (offline): bring the globe in early in the zoom.
-            globeFrom = startScale * 4
-            globeTo = startScale * 40
+            // No snapshots (offline): sweep in early.
+            revealTo = startScale * 40
         }
+        revealFrom = max(revealTo / 7, startScale * 1.2)
+
+        // The speed of the zoom: a smooth bell (smoothstep's), with a dip where the sweep happens.
+        let total = log(endScale) - log(startScale)
+        let middle = (log((revealFrom * revealTo).squareRoot()) - log(startScale)) / total
+        var lo = 0.0, hi = 1.0
+        for _ in 0..<40 {
+            let mid = (lo + hi) / 2
+            if Self.ease(mid) < middle { lo = mid } else { hi = mid }
+        }
+        let dip = (lo + hi) / 2
+        var cumulative = [0.0]
+        let steps = 256
+        for step in 0..<steps {
+            let u = (Double(step) + 0.5) / Double(steps)
+            let g = (u - dip) / 0.1
+            let speed = 6 * u * (1 - u) * (1 - 0.55 * exp(-g * g))
+            cumulative.append(cumulative[step] + speed)
+        }
+        let sum = cumulative[steps]
+        depths = cumulative.map { $0 / sum }
     }
 
     static func ease(_ x: Double) -> Double {
@@ -285,8 +350,15 @@ struct ZoomPath {
         return t * t * (3 - 2 * t)
     }
 
+    private func depth(atProgress u: Double) -> Double {
+        let x = min(max(u, 0), 1) * Double(depths.count - 1)
+        let i = min(Int(x), depths.count - 2)
+        let f = x - Double(i)
+        return depths[i] * (1 - f) + depths[i + 1] * f
+    }
+
     func scale(at u: Double) -> Double {
-        exp(log(startScale) + (log(endScale) - log(startScale)) * Self.ease(u))
+        exp(log(startScale) + (log(endScale) - log(startScale)) * depth(atProgress: u))
     }
 
     /// How far through the zoom the scale is, in log space (0 at the handover, 1 at rest).
@@ -303,18 +375,23 @@ struct ZoomPath {
         EarthZoom.startRoll * (1 - Self.ease(depth(scale(at: u)) / 0.75))
     }
 
-    /// How much of the globe shows over the snapshots.
-    func globeOpacity(at u: Double) -> Double {
-        between(scale(at: u), globeFrom, globeTo)
+    /// How far the sweep has gone: 0 before it starts, 1 once the globe has the whole screen.
+    func sweep(at u: Double) -> Double {
+        let s = scale(at: u)
+        guard s > revealFrom else { return 0 }
+        return min(max((log(s) - log(revealFrom)) / (log(revealTo) - log(revealFrom)), 0), 1)
     }
 
-    /// The globe at `u`: facing the city at the screen's middle while it takes over from the
+    /// The snapshots are needed until the sweep has passed the screen's corners.
+    func showsSnapshots(at u: Double) -> Bool { sweep(at: u) < 1 }
+
+    /// The globe at `u`: facing the city at the screen's middle while it sweeps out over the
     /// snapshots, then drifting to its place, turning to face its resting point.
     func globe(at u: Double) -> GlobeState {
         let s = scale(at: u)
         let distance = 1 + s * Double(focal) / EarthZoom.earthRadius
         let radius = focal / CGFloat((distance * distance - 1).squareRoot())
-        let k = between(s, globeTo, endScale)
+        let k = between(s, revealTo, endScale)
         var state = rest
         state.distance = distance
         state.radius = radius
@@ -324,7 +401,10 @@ struct ZoomPath {
         state.longitude = EarthZoom.city.longitude + (rest.longitude - EarthZoom.city.longitude) * k
         state.roll = roll(at: u)
         state.glow = rest.glow * k
-        state.opacity = globeOpacity(at: u)
+        let swept = sweep(at: u)
+        state.opacity = s > revealFrom ? 1 : 0
+        // Eased, so the ring sets off gently from the city and reaches the corners at speed.
+        state.reveal = swept < 1 ? (screenCenter, reach * CGFloat(pow(swept, 1.25))) : nil
         return state
     }
 }

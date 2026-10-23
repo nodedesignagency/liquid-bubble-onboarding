@@ -225,10 +225,10 @@ static float orbHeight(float2 d, float r, float2 stretch, thread float2 &toward)
     return half4(mix(outside, inside, alpha));
 }
 
-/// v3's globe, like the Blink app's (used through `.colorEffect` in `HoloGlobeView`): a glowing
-/// holographic Earth on the dark page. Pearl continents with a pastel sheen (pink, lilac, sky) that
-/// shifts as it turns, raised a little (the shore facing the light catches it, the sea behind a
-/// shore lies in its shadow), on a deep indigo sea, with a cool rim and a soft violet aura around it.
+/// v3's globe, after the Blink app's (used through `.colorEffect` in `HoloGlobeView`): a glowing
+/// Earth on the dark page. Continents with a sheen that shifts as it turns, raised a little (the
+/// shore facing the light catches it, the sea behind a shore lies in its shadow), on a sea graded
+/// top to bottom, with a rim, a warm glow from below on the limb, and an aura.
 ///
 /// The geometry is `GlobeMath`: a unit sphere seen by a pinhole camera `frame.w` Earth radii from
 /// its centre, sized so its edge is `frame.z` points from `frame.xy`, turned so (`view.x`, `view.y`)
@@ -237,13 +237,38 @@ static float orbHeight(float2 d, float r, float2 stretch, thread float2 &toward)
 /// top-left corner holds two calibration blocks (the coast, and 2.26 px inland), so the coast level
 /// and scale are read from the texture whatever colour conversion it went through.
 /// `look`: holo strength, aura strength, opacity, time (for the sheen's drift).
+/// `reveal`: only inside the circle at `reveal.xy` of radius `reveal.z` (points), its edge `reveal.w`
+/// wide and glowing, so the globe can sweep out over the satellite imagery from the city.
+/// `palette`: `GlobePalette`'s 29 floats: sea top, sea bottom, rim, land, sheen A, B, C, aura and
+/// backlight (rgb each), then the sheen amount and the backlight's strength.
 /// Mirrored in `tools/preview/globe.py`.
 static float landDistance(texture2d<half> land, sampler s, float2 uv, float coast, float unit) {
     return (float(land.sample(s, uv).r) - coast) * unit;
 }
 
+static float3 paletteColour(device const float *palette, int index) {
+    return float3(palette[index * 3], palette[index * 3 + 1], palette[index * 3 + 2]);
+}
+
 [[ stitchable ]] half4 holoGlobe(float2 position, half4 color, texture2d<half> land,
-                                 float4 frame, float4 view, float4 look) {
+                                 float4 frame, float4 view, float4 look, float4 reveal,
+                                 device const float *palette, int count) {
+    if (count < 29) {
+        return half4(0.0h);
+    }
+    const float3 seaTop = paletteColour(palette, 0), seaBottom = paletteColour(palette, 1);
+    const float3 rimColour = paletteColour(palette, 2), landBase = paletteColour(palette, 3);
+    const float3 sheenA = paletteColour(palette, 4), sheenB = paletteColour(palette, 5), sheenC = paletteColour(palette, 6);
+    const float3 auraColour = paletteColour(palette, 7), backColour = paletteColour(palette, 8);
+    const float sheenAmount = palette[27], backStrength = palette[28];
+
+    // The sweep: only inside the reveal circle, with a glowing ring at its edge.
+    const float fromReveal = distance(position, reveal.xy);
+    const float inside = 1.0 - smoothstep(reveal.z - reveal.w, reveal.z, fromReveal);
+    const float ringT = (fromReveal - reveal.z + reveal.w * 0.5) / max(reveal.w * 0.45, 0.001);
+    const float ring = reveal.z < 1e5 ? 0.9 * exp(-ringT * ringT) : 0.0;
+    const float3 ringColour = float3(0.80, 0.82, 1.0);
+
     const float2 centre = frame.xy;
     const float radius = max(frame.z, 1.0);
     const float dist = max(frame.w, 1.0001);
@@ -253,13 +278,15 @@ static float landDistance(texture2d<half> land, sampler s, float2 uv, float coas
     const float r = length(p);
     const float beyond = max(r - radius, 0.0);
     const float aura = look.y * (0.42 * exp(-beyond / (0.30 * radius)) + 0.35 * exp(-beyond / (0.06 * radius)));
-    const float3 auraColour = float3(0.36, 0.40, 1.0);
     const float edge = 1.0 - smoothstep(radius - 0.6, radius + 0.6, r);
     if (edge <= 0.0) {
-        if (aura < 0.003) {
+        const float a = min(aura, 1.0) * inside;
+        const float3 rgb = auraColour * aura * inside + ringColour * ring;
+        const float alpha = max(a, min(ring, 1.0));
+        if (alpha < 0.003) {
             return half4(0.0h);
         }
-        return half4(half3(auraColour * aura * look.z), half(min(aura, 1.0) * look.z));
+        return half4(half3(rgb * look.z), half(alpha * look.z));
     }
 
     // The ray through this pixel, from the camera at (0, 0, dist), y up.
@@ -306,16 +333,16 @@ static float landDistance(texture2d<half> land, sampler s, float2 uv, float coas
     const float landMix = smoothstep(-w, w, sd);
     const float fres = pow(1.0 - ndv, 3.0);
 
-    float3 ocean = float3(0.03 + 0.10 * fres, 0.05 + 0.15 * fres, 0.16 + 0.42 * fres);
+    // The sea: graded top to bottom, brighter toward the limb.
+    float3 ocean = mix(seaTop, seaBottom, clamp(0.5 - 0.5 * P.y, 0.0, 1.0));
+    ocean += 0.18 * fres * rimColour;
     ocean *= 0.75 + 0.35 * clamp(ndl, 0.0, 1.0);
 
     const float phase = 1.3 * (1.0 - ndv) + 0.5 * E.x + 0.35 * E.y + 0.06 * look.w;
     const float w4 = 0.5 + 0.5 * sin(2.0 * M_PI_F * phase);
     const float w5 = 0.5 + 0.5 * sin(2.0 * M_PI_F * (phase * 0.7 + 0.31));
-    const float3 pink = float3(1.0, 0.80, 0.93), lilac = float3(0.82, 0.79, 1.0), sky = float3(0.74, 0.91, 1.0);
-    const float3 sheen = mix(mix(sky, pink, w4), lilac, 1.0 - w5);
-    const float3 pearl = float3(0.95, 0.95, 0.99);
-    float3 landColour = mix(pearl, sheen, 0.7 * look.x);
+    const float3 sheen = mix(mix(sheenC, sheenA, w4), sheenB, 1.0 - w5);
+    float3 landColour = mix(landBase, sheen, sheenAmount * look.x);
     const float lit = smoothstep(0.0, 4.0, sd) * (1.0 - smoothstep(-2.0, 2.0, away));
     const float shade = smoothstep(0.0, 4.0, sd) * (1.0 - smoothstep(-2.0, 2.0, toward));
     landColour = landColour * (0.70 + 0.34 * clamp(ndl, 0.0, 1.0)) + 0.22 * lit - 0.16 * shade;
@@ -326,10 +353,16 @@ static float landDistance(texture2d<half> land, sampler s, float2 uv, float coas
     const float3 R = 2.0 * ndl * P - L;
     const float spec = pow(clamp(dot(R, V), 0.0, 1.0), 40.0);
     c += 0.22 * spec * (1.0 - landMix) * float3(0.85, 0.9, 1.0);
-    c += 0.55 * fres * float3(0.55, 0.62, 1.0);
+    c += 0.55 * fres * rimColour;
+    // A warm glow from below on the limb, away from the key light (like the reference's pink).
+    const float3 B = normalize(float3(0.25, -0.85, -0.2));
+    const float back = pow(clamp(dot(P, B), 0.0, 1.0), 2.0) * pow(1.0 - ndv, 1.5);
+    c += backStrength * back * backColour;
     c = clamp(c, 0.0, 1.0);
 
-    const float3 rgb = c * edge + auraColour * aura * (1.0 - edge);
-    const float alpha = max(edge, min(aura, 1.0));
+    float3 rgb = c * edge + auraColour * aura * (1.0 - edge);
+    float alpha = max(edge, min(aura, 1.0));
+    rgb = rgb * inside + ringColour * ring;
+    alpha = max(alpha * inside, min(ring, 1.0));
     return half4(half3(rgb * look.z), half(alpha * look.z));
 }

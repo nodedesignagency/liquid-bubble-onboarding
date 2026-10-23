@@ -2,10 +2,14 @@ import SwiftUI
 import UIKit
 
 /// v3's liquid, after the AiOS concept the user shared, made of glass instead of flat colour:
-/// Earth and each friend sit in a ring of glass, and a neck of glass runs from Earth to each friend,
-/// wide where it leaves Earth, thin in the middle, flaring into the friend's ring. On iOS 26 it is
-/// real Liquid Glass: every ring and neck is a glass shape inside one `GlassEffectContainer`, so
-/// they render as one body. Before iOS 26 it is a dark glass outline.
+/// everyone sits in a ring of glass, and a neck of glass runs from the one in the middle (Earth, or
+/// a friend you tapped) to each of the others, wide where it leaves the middle, thin halfway,
+/// flaring into the other's ring. On iOS 26 it is real Liquid Glass: every ring and neck is a glass
+/// shape inside one `GlassEffectContainer`, so they render as one body. Before iOS 26 it is a dark
+/// glass outline.
+///
+/// Under the glass the page is filled plain: Liquid Glass shows what is behind it, and the dot grid
+/// showing through the rings and necks read as dots on top of the photos.
 struct WorldGlass: View {
     var bubbles: [RenderedBubble]
     var metrics: StageMetrics
@@ -13,6 +17,20 @@ struct WorldGlass: View {
 
     var body: some View {
         let parts = GlassPart.parts(for: bubbles, metrics: metrics)
+        ZStack {
+            ForEach(parts) { part in
+                PathShape(path: part.absolute)
+                    .fill(Theme.worldCanvas)
+                    .overlay(PathShape(path: part.absolute).stroke(Theme.worldCanvas, lineWidth: 6))
+            }
+            glass(parts)
+        }
+        .frame(width: size.width, height: size.height)
+        .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func glass(_ parts: [GlassPart]) -> some View {
         Group {
             if #available(iOS 26.0, *) {
                 GlassEffectContainer(spacing: 10) {
@@ -36,7 +54,6 @@ struct WorldGlass: View {
                 .frame(width: size.width, height: size.height)
             }
         }
-        .allowsHitTesting(false)
     }
 }
 
@@ -58,24 +75,22 @@ struct GlassPart: Identifiable {
         local = absolute.offsetBy(dx: -box.minX, dy: -box.minY)
     }
 
-    /// Earth's ring, each visible friend's ring, and a neck from Earth to each friend close enough
-    /// to reach. The bubbles' radii are their glass.
+    /// A ring for everyone visible (Earth and people), and a neck from the biggest of them (the one
+    /// in the middle; while two swap, whoever is bigger at that moment) to each other one close
+    /// enough to reach. The bubbles' radii are their glass.
     static func parts(for bubbles: [RenderedBubble], metrics: StageMetrics) -> [GlassPart] {
-        guard bubbles.indices.contains(OrbitChoreography.earth) else { return [] }
-        let earth = bubbles[OrbitChoreography.earth]
-        guard earth.radius > 0.5 else { return [] }
-        let earthCenter = metrics.point(earth.center)
-        let earthRadius = earth.radius * metrics.scale
-        var parts = [GlassPart(id: "earth", absolute: circle(earthCenter, earthRadius))]
-        for home in OrbitChoreography.friendHomes {
-            guard bubbles.indices.contains(home.id) else { continue }
-            let friend = bubbles[home.id]
-            guard friend.radius > 0.5 else { continue }
-            let center = metrics.point(friend.center)
-            let radius = friend.radius * metrics.scale
-            parts.append(GlassPart(id: "friend-\(home.id)", absolute: circle(center, radius)))
-            if let neck = GlassNeck.path(from: earthCenter, earthRadius, to: center, radius) {
-                parts.append(GlassPart(id: "neck-\(home.id)", absolute: neck))
+        let shown = bubbles.filter { $0.radius > 0.5 && ($0.id == OrbitChoreography.earth || WorldPhoto.hasPhoto($0.id)) }
+        guard let hub = shown.max(by: { $0.radius < $1.radius }) else { return [] }
+        let hubCenter = metrics.point(hub.center)
+        let hubRadius = hub.radius * metrics.scale
+        var parts: [GlassPart] = []
+        for bubble in shown {
+            let center = metrics.point(bubble.center)
+            let radius = bubble.radius * metrics.scale
+            parts.append(GlassPart(id: "ring-\(bubble.id)", absolute: circle(center, radius)))
+            guard bubble.id != hub.id else { continue }
+            if let neck = GlassNeck.path(from: hubCenter, hubRadius, to: center, radius) {
+                parts.append(GlassPart(id: "neck-\(bubble.id)", absolute: neck))
             }
         }
         return parts
@@ -142,10 +157,22 @@ enum GlassNeck {
     }
 }
 
-/// v3's photos: friends 1...4. Earth (0) is the globe.
+/// v3's photos: people 1...9. Earth (0) is the globe.
 enum WorldPhoto {
     static func hasPhoto(_ id: Int) -> Bool {
-        OrbitChoreography.friendHomes.contains { $0.id == id }
+        (1...9).contains(id)
+    }
+
+    /// A photo inside a ring of glass of radius `glass`: 5 points of glass, less on a small pin.
+    static func photoRadius(glass: CGFloat) -> CGFloat {
+        glass - min(5, glass * 0.15)
+    }
+
+    /// The globe inside Earth's glass, in reference points: the same proportion as at rest
+    /// (84 in 91). While Earth's glass seeps out or drains away, the globe keeps its full size.
+    static func globeRadius(for earth: RenderedBubble) -> CGFloat {
+        let glass = earth.isAppearing || earth.isVanishing ? earth.fullRadius : earth.radius
+        return glass * OrbitChoreography.globeRadius / OrbitChoreography.bloomEarth.radius
     }
 
     static func image(for id: Int) -> UIImage? {
@@ -158,11 +185,11 @@ enum WorldPhoto {
     /// it simply grows with its glass.
     static func radius(for bubble: RenderedBubble) -> CGFloat {
         guard bubble.isAppearing || bubble.isLeaving else {
-            return bubble.radius * OrbitChoreography.photoFraction
+            return photoRadius(glass: bubble.radius)
         }
         guard bubble.fullRadius > 0.5 else { return 0 }
         let grown = bubble.radius / bubble.fullRadius
-        return bubble.fullRadius * OrbitChoreography.photoFraction * min(max((grown - 0.3) / 0.7, 0), 1.12)
+        return photoRadius(glass: bubble.fullRadius) * min(max((grown - 0.3) / 0.7, 0), 1.12)
     }
 
     /// The white edge a pin has on the globe, fading as the friend grows into orbit.
@@ -171,9 +198,9 @@ enum WorldPhoto {
     }
 }
 
-/// v3: the finger spinning everyone around Earth. Dragging turns everything with the finger (the
-/// angle it sweeps around Earth); letting go, it coasts to a stop. The stage turns every friend
-/// around Earth by this angle, and the globe turns on its axis with them.
+/// v3: the finger spinning everyone round the middle. Dragging turns everything with the finger
+/// (the angle it sweeps round the hub); letting go, it coasts to a stop. The stage turns everyone
+/// round the hub by this angle, and the globe turns on its axis with them.
 final class SpinDial {
     /// How long the coast takes to fade, in seconds (it is 95% done after three times this).
     static let coast = 0.55

@@ -46,9 +46,10 @@ struct BubbleStage: View {
     var backdrop: AnyView? = nil
     /// v3: the finger spinning everyone around Earth.
     var spin: SpinDial? = nil
-    /// v3: drawn between the glass and the photos (the globe), so pins sit on it and the glass
-    /// rings it.
-    var centerpiece: AnyView? = nil
+    /// v3: drawn between the glass and the photos (the globe), given Earth's bubble as it is this
+    /// frame (turned by the spin), so pins sit on the globe, the glass rings it, and it follows Earth
+    /// when a friend takes the middle.
+    var centerpiece: ((RenderedBubble?) -> AnyView)? = nil
     /// Starts on `scene` already settled instead of animating into it: v2's dome is simply there
     /// at launch (it used to swell out of the middle of the screen and bounce down), and v3's
     /// Earth waits at its own place, so its pool swells out from under the globe.
@@ -62,8 +63,11 @@ struct BubbleStage: View {
 
     private let people = Person.samples
 
+    /// `engine`: pass one to share it with the screen (v3 hit-tests taps on it); by default the
+    /// stage makes its own.
     init(scene: OrbitScene, slot: CGRect? = nil, look: StageLook = .v1, lift: EarthLift? = nil,
-         backdrop: AnyView? = nil, spin: SpinDial? = nil, centerpiece: AnyView? = nil, startsSettled: Bool = false) {
+         backdrop: AnyView? = nil, spin: SpinDial? = nil, centerpiece: ((RenderedBubble?) -> AnyView)? = nil,
+         startsSettled: Bool = false, engine: BubbleEngine? = nil) {
         self.scene = scene
         self.slot = slot
         self.look = look
@@ -72,7 +76,7 @@ struct BubbleStage: View {
         self.spin = spin
         self.centerpiece = centerpiece
         self.startsSettled = startsSettled
-        let engine = BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
+        let engine = engine ?? BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
         if startsSettled, let first = OrbitChoreography.keyframes(for: scene).first {
             // Started long ago, so every spring has come to rest.
             engine.transition(to: first.layout, at: Date.timeIntervalSinceReferenceDate - 60)
@@ -103,15 +107,18 @@ struct BubbleStage: View {
                         let turned = turnedBySpin(bubbles, at: time)
                         WorldGlass(bubbles: turned, metrics: metrics, size: proxy.size)
                         if let centerpiece {
-                            centerpiece
+                            centerpiece(turned.indices.contains(OrbitChoreography.earth) ? turned[OrbitChoreography.earth] : nil)
                         }
                         ForEach(turned.filter { WorldPhoto.hasPhoto($0.id) && WorldPhoto.radius(for: $0) > 0.25 }) { bubble in
                             let diameter = WorldPhoto.radius(for: bubble) * 2 * metrics.scale
                             WorldDisc(image: WorldPhoto.image(for: bubble.id), diameter: diameter,
                                       edge: WorldPhoto.pinEdge(for: bubble))
                                 .position(metrics.point(bubble.center))
-                                // Melting back into Earth, they slip under the others.
-                                .zIndex(bubble.isLeaving ? -1000 + bubble.depth : bubble.depth)
+                                // Budding out of a friend in the middle, they form on top of
+                                // their photo like a droplet, instead of hiding under it; melting
+                                // back into Earth, they slip under the others.
+                                .zIndex(bubble.isAppearing ? 1000 + bubble.depth
+                                        : bubble.isLeaving ? -1000 + bubble.depth : bubble.depth)
                         }
                     }
                     ForEach(look == .v1 ? bubbles : []) { bubble in
@@ -171,20 +178,23 @@ struct BubbleStage: View {
         }
     }
 
-    /// v3: everyone but Earth turned around Earth by the spin. Photos stay upright: only their
-    /// places turn.
-    private func turnedBySpin(_ bubbles: [RenderedBubble], at time: Double) -> [RenderedBubble] {
-        guard let spin else { return bubbles }
-        let angle = spin.angle(at: time)
+    /// v3: everyone turned round the hub by the spin (the one in the middle sits on the pivot, so
+    /// it doesn't move, and someone crossing to the middle never jumps). Photos stay upright: only
+    /// their places turn.
+    static func turned(_ bubbles: [RenderedBubble], by angle: Double) -> [RenderedBubble] {
         guard angle != 0 else { return bubbles }
         let pivot = OrbitChoreography.bloomEarth.center
         return bubbles.map { bubble in
-            guard bubble.id != OrbitChoreography.earth else { return bubble }
             var out = bubble
             let around = CGPoint(x: bubble.center.x - pivot.x, y: bubble.center.y - pivot.y).rotated(by: angle)
             out.center = CGPoint(x: around.x + pivot.x, y: around.y + pivot.y)
             return out
         }
+    }
+
+    private func turnedBySpin(_ bubbles: [RenderedBubble], at time: Double) -> [RenderedBubble] {
+        guard let spin else { return bubbles }
+        return Self.turned(bubbles, by: spin.angle(at: time))
     }
 
     /// Earth moved by the finger, if there is one.
