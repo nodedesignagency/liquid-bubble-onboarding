@@ -230,6 +230,15 @@ static float orbHeight(float2 d, float r, float2 stretch, thread float2 &toward)
 /// shore facing the light catches it, the sea behind a shore lies in its shadow), on a sea graded
 /// top to bottom, with a rim, a warm glow from below on the limb, and an aura.
 ///
+/// While the zoom pulls back from the city it is the real Earth instead: Apple's satellite
+/// snapshots drawn on the same sphere (`imagery.x` of it), so the photo dissolves into the
+/// hologram in place, coast on coast. The snapshots are Web Mercator: `world` covers the whole
+/// map (`worldMap`: u = x + y * longitude, v = z - w * mercator(latitude)), and up to three
+/// regional ones (`sat1`, finest, to `sat3`) are centred near the city (`city`, radians, and
+/// `level1`...`level3`: the city's uv, uv per radian, and the level's opacity), each fading out
+/// toward its edges over the coarser ones. `imagery.y` is the world's opacity (0 when it didn't
+/// load).
+///
 /// The geometry is `GlobeMath`: a unit sphere seen by a pinhole camera `frame.w` Earth radii from
 /// its centre, sized so its edge is `frame.z` points from `frame.xy`, turned so (`view.x`, `view.y`)
 /// (latitude, longitude, radians) faces you, and turned on screen by `view.z` (clockwise). The
@@ -237,8 +246,6 @@ static float orbHeight(float2 d, float r, float2 stretch, thread float2 &toward)
 /// top-left corner holds two calibration blocks (the coast, and 2.26 px inland), so the coast level
 /// and scale are read from the texture whatever colour conversion it went through.
 /// `look`: holo strength, aura strength, opacity, time (for the sheen's drift).
-/// `reveal`: only inside the circle at `reveal.xy` of radius `reveal.z` (points), its edge `reveal.w`
-/// wide and glowing, so the globe can sweep out over the satellite imagery from the city.
 /// `palette`: `GlobePalette`'s 29 floats: sea top, sea bottom, rim, land, sheen A, B, C, aura and
 /// backlight (rgb each), then the sheen amount and the backlight's strength.
 /// Mirrored in `tools/preview/globe.py`.
@@ -250,8 +257,31 @@ static float3 paletteColour(device const float *palette, int index) {
     return float3(palette[index * 3], palette[index * 3 + 1], palette[index * 3 + 2]);
 }
 
+/// Web Mercator's y for a latitude (radians), clamped where the map ends (85.05 degrees).
+static float mercator(float latitude) {
+    return log(tan(0.25 * M_PI_F + 0.5 * clamp(latitude, -1.4844, 1.4844)));
+}
+
+/// A regional snapshot over `base`, where it covers the point `dLon` east and `dY` north (in
+/// Mercator units) of the city, fading out toward its edges.
+static float3 overSnapshot(float3 base, texture2d<half> image, sampler s, float4 level, float dLon, float dY) {
+    if (level.w <= 0.001) {
+        return base;
+    }
+    const float2 uv = float2(level.x + level.z * dLon, level.y - level.z * dY);
+    const float2 off = abs(uv - 0.5);
+    const float inside = 1.0 - smoothstep(0.40, 0.49, max(off.x, off.y));
+    if (inside <= 0.0) {
+        return base;
+    }
+    return mix(base, float3(image.sample(s, uv).rgb), level.w * inside);
+}
+
 [[ stitchable ]] half4 holoGlobe(float2 position, half4 color, texture2d<half> land,
-                                 float4 frame, float4 view, float4 look, float4 reveal,
+                                 texture2d<half> world, texture2d<half> sat1, texture2d<half> sat2,
+                                 texture2d<half> sat3, float4 frame, float4 view, float4 look,
+                                 float4 imagery, float4 worldMap, float4 city,
+                                 float4 level1, float4 level2, float4 level3,
                                  device const float *palette, int count) {
     if (count < 29) {
         return half4(0.0h);
@@ -261,13 +291,9 @@ static float3 paletteColour(device const float *palette, int index) {
     const float3 sheenA = paletteColour(palette, 4), sheenB = paletteColour(palette, 5), sheenC = paletteColour(palette, 6);
     const float3 auraColour = paletteColour(palette, 7), backColour = paletteColour(palette, 8);
     const float sheenAmount = palette[27], backStrength = palette[28];
-
-    // The sweep: only inside the reveal circle, with a glowing ring at its edge.
-    const float fromReveal = distance(position, reveal.xy);
-    const float inside = 1.0 - smoothstep(reveal.z - reveal.w, reveal.z, fromReveal);
-    const float ringT = (fromReveal - reveal.z + reveal.w * 0.5) / max(reveal.w * 0.45, 0.001);
-    const float ring = reveal.z < 1e5 ? 0.9 * exp(-ringT * ringT) : 0.0;
-    const float3 ringColour = float3(0.80, 0.82, 1.0);
+    const float satellite = clamp(imagery.x, 0.0, 1.0);
+    // The real Earth's thin blue atmosphere, at the limb and just past it.
+    const float3 airColour = float3(0.42, 0.66, 1.0);
 
     const float2 centre = frame.xy;
     const float radius = max(frame.z, 1.0);
@@ -278,15 +304,15 @@ static float3 paletteColour(device const float *palette, int index) {
     const float r = length(p);
     const float beyond = max(r - radius, 0.0);
     const float aura = look.y * (0.42 * exp(-beyond / (0.30 * radius)) + 0.35 * exp(-beyond / (0.06 * radius)));
+    const float air = satellite * 0.55 * exp(-beyond / (0.022 * radius));
     const float edge = 1.0 - smoothstep(radius - 0.6, radius + 0.6, r);
     if (edge <= 0.0) {
-        const float a = min(aura, 1.0) * inside;
-        const float3 rgb = auraColour * aura * inside + ringColour * ring;
-        const float alpha = max(a, min(ring, 1.0));
-        if (alpha < 0.003) {
+        const float glow = min(aura + air, 1.0);
+        if (glow < 0.003) {
             return half4(0.0h);
         }
-        return half4(half3(rgb * look.z), half(alpha * look.z));
+        const float3 rgb = auraColour * aura + airColour * air;
+        return half4(half3(rgb * look.z), half(glow * look.z));
     }
 
     // The ray through this pixel, from the camera at (0, 0, dist), y up.
@@ -360,9 +386,24 @@ static float3 paletteColour(device const float *palette, int index) {
     c += backStrength * back * backColour;
     c = clamp(c, 0.0, 1.0);
 
-    float3 rgb = c * edge + auraColour * aura * (1.0 - edge);
-    float alpha = max(edge, min(aura, 1.0));
-    rgb = rgb * inside + ringColour * ring;
-    alpha = max(alpha * inside, min(ring, 1.0));
+    if (satellite > 0.001) {
+        // The real Earth: the snapshots, lit like a planet (just as bright as the flat snapshots
+        // where it faces you), with its blue atmosphere at the limb.
+        const float Y = mercator(lat);
+        const float2 worldUV = float2(worldMap.x + worldMap.y * lon, worldMap.z - worldMap.w * Y);
+        float3 photo = mix(float3(0.02, 0.05, 0.10), float3(world.sample(s, worldUV).rgb), clamp(imagery.y, 0.0, 1.0));
+        float dLon = lon - city.y;
+        dLon -= 2.0 * M_PI_F * floor((dLon + M_PI_F) / (2.0 * M_PI_F));
+        const float dY = Y - mercator(city.x);
+        photo = overSnapshot(photo, sat3, s, level3, dLon, dY);
+        photo = overSnapshot(photo, sat2, s, level2, dLon, dY);
+        photo = overSnapshot(photo, sat1, s, level1, dLon, dY);
+        photo *= clamp(0.65 + 0.5 * ndl, 0.0, 1.0);
+        photo = mix(photo, airColour, 0.55 * fres);
+        c = mix(c, photo, satellite);
+    }
+
+    const float3 rgb = c * edge + (auraColour * aura + airColour * air) * (1.0 - edge);
+    const float alpha = max(edge, min(aura + air, 1.0));
     return half4(half3(rgb * look.z), half(alpha * look.z));
 }

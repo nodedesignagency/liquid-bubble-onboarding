@@ -3,13 +3,14 @@ import MapKit
 
 /// v3: one dark screen. It opens on a real city in 3D (Apple's map), shown only once every view
 /// the opening passes through has rendered, with a big dome of clear glass rising from the bottom
-/// edge: "Swipe up to enter". Swipe it up and it sweeps off over the city, the map flattens, rises
-/// and pulls all the way back (from satellite snapshots fetched while it loaded, so it never waits
-/// on the network), and a glowing ring sweeps out from the city turning the real Earth into a
-/// holographic globe ("Everyone you love, / in one orbit."). Six friends pop up as pins on their
-/// cities, then lift off into orbit round Earth, joined to it by necks of liquid glass, over a
-/// faint dot grid. Drag around Earth to spin everyone, the globe with them. Tap a friend and they
-/// take the middle, globe-size, their own friends budding out of them; tap Earth to come back.
+/// edge, "Swipe up to enter" on it like Wabi's. Swipe it up and it sweeps off over the city, the
+/// map flattens, rises and pulls all the way back (from satellite snapshots fetched while it
+/// loaded, so it never waits on the network) until the real Earth is a ball, which dissolves in
+/// place into a holographic globe ("Everyone you love, / in one orbit."). Six friends pop up as
+/// pins on their cities, then lift off into orbit round Earth, joined to it by necks of liquid
+/// glass, over a faint dot grid. Drag around Earth to spin everyone, the globe with them. Tap a
+/// friend and everyone else melts into Earth, which parks in the top-left corner, while the friend
+/// takes the middle and four moments from their week bud out of them; tap Earth to come back.
 /// "Continue" melts everyone back into Earth and dives back into the city, and the dome rises
 /// again: the first frame, so a screen recording loops.
 ///
@@ -43,7 +44,7 @@ struct WorldOnboardingView: View {
             case .space: nil
             case .meet: "Your friends, always\nwithin reach."
             case .focus(let id):
-                "\(OrbitChoreography.city(of: id)) · \(OrbitChoreography.friends(of: id).count) friends\nTap Earth to come back."
+                "This week in \(OrbitChoreography.city(of: id)).\nTap Earth to come back."
             }
         }
     }
@@ -53,6 +54,8 @@ struct WorldOnboardingView: View {
     /// a property's initial value is built every time the view is.
     @State private var city: CityMapController?
     @State private var imagery = ZoomImagery()
+    /// The real Earth for the globe while the zoom runs, taken from `imagery` when it starts.
+    @State private var globeImagery: GlobeImagery?
     @State private var stageSize = CGSize.zero
     /// The dark cover over the city until it has rendered, and a spinner if that takes a while.
     @State private var cityCover = 1.0
@@ -148,8 +151,14 @@ struct WorldOnboardingView: View {
                 #if DEBUG
                 .onLongPressGesture(minimumDuration: 0.8) { cyclePalette() }
                 #endif
-                .onAppear { stageSize = size }
-                .onChange(of: size) { _, newSize in stageSize = newSize }
+                .onAppear {
+                    stageSize = size
+                    placeHomeCorner(size: size, insets: proxy.safeAreaInsets)
+                }
+                .onChange(of: size) { _, newSize in
+                    stageSize = newSize
+                    placeHomeCorner(size: newSize, insets: proxy.safeAreaInsets)
+                }
             }
             .ignoresSafeArea()
 
@@ -190,14 +199,13 @@ struct WorldOnboardingView: View {
 
     // MARK: The zoom
 
-    /// The city, then the snapshots zooming out, under the stage. The snapshots lose their colour
-    /// as the globe's ring sweeps out over them, so the real Earth fades into the hologram.
+    /// The city, then the flat snapshots zooming out, under the stage, until the globe takes over
+    /// with the same imagery on the sphere.
     private func zoomLayer(size: CGSize) -> some View {
         TimelineView(.animation) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             let u = progress(at: t)
             let stack = stackOpacity(at: t, u: u)
-            let sweep = path.flatMap { path in u.map { path.sweep(at: $0) } } ?? 0
             ZStack {
                 if let city {
                     CityMapView(controller: city)
@@ -207,8 +215,6 @@ struct WorldOnboardingView: View {
                 if let path, let u, stack > 0 {
                     ZoomStack(levels: imagery.levels, metersPerPoint: path.scale(at: u), roll: path.roll(at: u),
                               center: CGPoint(x: size.width / 2, y: size.height / 2), size: size)
-                        .saturation(1 - 0.65 * sweep)
-                        .brightness(-0.14 * sweep)
                         .opacity(stack)
                 }
             }
@@ -223,7 +229,7 @@ struct WorldOnboardingView: View {
     private func globeLayer(earth: RenderedBubble?, size: CGSize) -> some View {
         let t = now
         if let state = globe(at: t, earth: earth, size: size) {
-            HoloGlobeView(state: state, palette: palette, time: t)
+            HoloGlobeView(state: state, palette: palette, time: t, imagery: globeImagery)
         }
     }
 
@@ -234,15 +240,16 @@ struct WorldOnboardingView: View {
         return min(max((t - start) / EarthZoom.zoomOut, 0), 1)
     }
 
-    /// The snapshots fade in over the map as the zoom starts and are dropped once the globe has
-    /// swept over the whole screen; on the way back they fade out over the map at the end.
+    /// The snapshots fade in over the map as the zoom starts (slowly: the first is drawn in 3D like
+    /// the map, so it should melt into it) and are dropped once the globe has taken over; on the
+    /// way back they fade out over the map at the end.
     private func stackOpacity(at t: Double, u: Double?) -> Double {
         guard let path, let u, let start = zoomStart, path.showsSnapshots(at: u) else { return 0 }
         if let back = backStart {
             let left = EarthZoom.zoomBack - (t - back)
-            return ZoomPath.ease(left / 0.35)
+            return ZoomPath.ease(left / 0.6)
         }
-        return ZoomPath.ease((t - start) / 0.35)
+        return ZoomPath.ease((t - start) / 0.6)
     }
 
     private func showsCity(u: Double?, stack: Double) -> Bool {
@@ -278,7 +285,7 @@ struct WorldOnboardingView: View {
     }
 
     private func turnedLongitude(_ longitude: Double, at t: Double) -> Double {
-        var turned = longitude - Self.spinTurn * spin.angle(at: t)
+        var turned = longitude - Self.spinTurn * spin.globeAngle(at: t)
         if let bloomStart, backStart == nil {
             turned -= Self.drift * max(0, t - bloomStart)
         }
@@ -322,12 +329,18 @@ struct WorldOnboardingView: View {
             ZStack {
                 GateDome(diameter: g.radius * 2)
                     .position(x: size.width / 2, y: g.restCenterY + offset)
-                hint(bob: reduceMotion ? 0 : CGFloat(sin(t * 3.4)) * 2)
+                hint(nudge: reduceMotion ? 0 : Self.nudge(at: t))
                     .opacity(hintOpacity(at: t))
-                    .position(x: size.width / 2, y: g.restTop + offset - 46)
+                    .position(x: size.width / 2, y: g.restTop + offset + 58)
             }
             .frame(width: size.width, height: size.height)
         }
+    }
+
+    /// The handle's lift: up 4 points and back over 0.8 s, then a rest, every 2.4 s.
+    private static func nudge(at t: Double) -> CGFloat {
+        let phase = t.truncatingRemainder(dividingBy: 2.4) / 0.8
+        return phase < 1 ? CGFloat(sin(.pi * phase)) * 4 : 0
     }
 
     /// The hint fades in once the dome has risen, and out at once when it is swiped away.
@@ -337,19 +350,22 @@ struct WorldOnboardingView: View {
         return ZoomPath.ease((t - shownAt - 0.5) / 0.6)
     }
 
-    private func hint(bob: CGFloat) -> some View {
+    /// Like Wabi's gate: quiet words on the glass itself, under a soft rounded handle (no arrow)
+    /// that lifts a little every couple of seconds, like a sheet you can pull up.
+    private func hint(nudge: CGFloat) -> some View {
         Button(action: passGate) {
-            VStack(spacing: 6) {
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 14, weight: .bold))
-                    .offset(y: bob - 1)
+            VStack(spacing: 11) {
+                Capsule()
+                    .fill(Color.white.opacity(0.75))
+                    .frame(width: 36, height: 5)
+                    .offset(y: -nudge)
                 Text("Swipe up to enter")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.92))
             }
-            .foregroundStyle(.white)
-            .shadow(color: .black.opacity(0.45), radius: 10, y: 1)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 20)
+            .shadow(color: .black.opacity(0.35), radius: 8, y: 1)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 24)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -454,20 +470,20 @@ struct WorldOnboardingView: View {
     }
 
     /// At the gate, a tap on the dome enters. Once everyone is in orbit, tapping a friend gives
-    /// them the middle, and tapping Earth among them comes back.
+    /// them the middle and opens their moments, and tapping Earth in its corner comes back.
     private func tap(at location: CGPoint, size: CGSize) {
         switch phase {
         case .gate:
             if location.y > DomeGeometry(size: size).restTop - 70 { passGate() }
         case .ready:
             guard let id = bubble(at: location, size: size) else { return }
-            let middle = focus ?? OrbitChoreography.earth
-            guard id != middle else { return }
-            if id == OrbitChoreography.earth {
+            if focus != nil, id == OrbitChoreography.earth {
+                spin.settle(at: now)
                 focus = nil
                 stageScene = .bloom
                 if mode == .onboarding { show(.meet) }
-            } else {
+            } else if focus == nil, OrbitChoreography.homeCircle.contains(id) {
+                spin.settle(at: now)
                 focus = id
                 stageScene = .focus(id)
                 if mode == .onboarding { show(.focus(id)) }
@@ -475,6 +491,13 @@ struct WorldOnboardingView: View {
         default:
             break
         }
+    }
+
+    /// Earth's corner, for this screen's size and safe area (the stage fills the screen).
+    private func placeHomeCorner(size: CGSize, insets: EdgeInsets) {
+        // Under the status bar; 59 points if the safe area isn't known.
+        let top = insets.top > 0 ? insets.top : 59
+        OrbitChoreography.placeHomeCorner(in: size, safeTop: top, safeLeading: insets.leading)
     }
 
     /// Who is under `location`, as the stage draws them (turned by the spin). The smallest wins,
@@ -584,7 +607,9 @@ struct WorldOnboardingView: View {
             domeVisible = false
             let size = stageSize
             let handoff = city.metersPerPoint() ?? city.handoffEstimate ?? 3.5
-            path = ZoomPath(startScale: handoff, levels: imagery.levels, rest: restGlobe(size: size), size: size)
+            globeImagery = imagery.globe
+            path = ZoomPath(startScale: handoff, levels: imagery.levels, imagery: globeImagery,
+                            rest: restGlobe(size: size), size: size)
             zoomStart = now
             guard await pause(EarthZoom.zoomOut * 0.8) else { return }
             show(.space)
@@ -629,9 +654,11 @@ struct WorldOnboardingView: View {
             show(nil)
             withAnimation(.easeInOut(duration: 0.8)) { gridOpacity = 0 }
             if focus != nil {
+                // Home first: Earth back in the middle, everyone back round it.
+                spin.settle(at: now)
                 focus = nil
                 stageScene = .bloom
-                guard await pause(0.8) else { return }
+                guard await pause(1.1) else { return }
             }
             stageScene = .space
             guard await pause(1.0) else { return }
@@ -642,7 +669,8 @@ struct WorldOnboardingView: View {
             // Back the way it came, from wherever the globe has turned to.
             var rest = current.rest
             rest.longitude = turnedLongitude(rest.longitude, at: now)
-            path = ZoomPath(startScale: current.startScale, levels: imagery.levels, rest: rest, size: stageSize)
+            path = ZoomPath(startScale: current.startScale, levels: imagery.levels, imagery: globeImagery,
+                            rest: rest, size: stageSize)
             backStart = now
             guard await pause(EarthZoom.zoomBack) else { return }
             city?.settle()

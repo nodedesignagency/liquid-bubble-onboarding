@@ -182,11 +182,12 @@ struct BubbleStage: View {
 
     /// v3: everyone turned round the hub by the spin (the one in the middle sits on the pivot, so
     /// it doesn't move, and someone crossing to the middle never jumps). Photos stay upright: only
-    /// their places turn.
+    /// their places turn. Earth never turns: it is on the pivot, or parked in its corner.
     static func turned(_ bubbles: [RenderedBubble], by angle: Double) -> [RenderedBubble] {
         guard angle != 0 else { return bubbles }
         let pivot = OrbitChoreography.bloomEarth.center
         return bubbles.map { bubble in
+            guard bubble.id != OrbitChoreography.earth else { return bubble }
             var out = bubble
             let around = CGPoint(x: bubble.center.x - pivot.x, y: bubble.center.y - pivot.y).rotated(by: angle)
             out.center = CGPoint(x: around.x + pivot.x, y: around.y + pivot.y)

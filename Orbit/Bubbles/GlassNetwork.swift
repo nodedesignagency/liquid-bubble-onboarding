@@ -4,9 +4,13 @@ import UIKit
 /// v3's liquid, after the AiOS concept the user shared, made of glass instead of flat colour:
 /// everyone sits in a ring of glass, and a neck of glass runs from the one in the middle (Earth, or
 /// a friend you tapped) to each of the others, wide where it leaves the middle, thin halfway,
-/// flaring into the other's ring. On iOS 26 it is real Liquid Glass: every ring and neck is a glass
-/// shape inside one `GlassEffectContainer`, so they render as one body. Before iOS 26 it is a dark
-/// glass outline.
+/// flaring into the other's ring. The rings and necks are joined into one outline (the necks meet
+/// the rings along their tangents, so it is smooth) and drawn as one shape of Liquid Glass on
+/// iOS 26, over the whole screen. Before iOS 26 it is a dark glass outline.
+///
+/// One shape, not one per ring and neck: separate glass shapes in a container blended together,
+/// but each was drawn in a view the size of its own shape, and the blend between them was cut off
+/// at those views' edges, as straight lines across the necks (the user saw "sharp cuts").
 ///
 /// Under the glass the page is filled plain: Liquid Glass shows what is behind it, and the dot grid
 /// showing through the rings and necks read as dots on top of the photos.
@@ -16,68 +20,43 @@ struct WorldGlass: View {
     var size: CGSize
 
     var body: some View {
-        let parts = GlassPart.parts(for: bubbles, metrics: metrics)
+        let outline = GlassPart.union(GlassPart.parts(for: bubbles, metrics: metrics))
         ZStack {
-            ForEach(parts) { part in
-                PathShape(path: part.absolute)
-                    .fill(Theme.worldCanvas)
-                    .overlay(PathShape(path: part.absolute).stroke(Theme.worldCanvas, lineWidth: 6))
-            }
-            glass(parts)
+            PathShape(path: outline)
+                .fill(Theme.worldCanvas)
+                .overlay(PathShape(path: outline).stroke(Theme.worldCanvas, lineWidth: 6))
+            glass(outline)
         }
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false)
     }
 
     @ViewBuilder
-    private func glass(_ parts: [GlassPart]) -> some View {
-        Group {
-            if #available(iOS 26.0, *) {
-                GlassEffectContainer(spacing: 10) {
-                    ZStack {
-                        ForEach(parts) { part in
-                            Rectangle()
-                                .fill(Color.white.opacity(0.001))
-                                .frame(width: part.bounds.width, height: part.bounds.height)
-                                .glassEffect(.regular, in: PathShape(path: part.local))
-                                .position(x: part.bounds.midX, y: part.bounds.midY)
-                        }
-                    }
-                    .frame(width: size.width, height: size.height)
-                }
-            } else {
-                let outline = GlassPart.union(parts)
-                ZStack {
-                    outline.fill(Theme.worldGlass)
-                    outline.stroke(Color.white.opacity(0.14), lineWidth: 1)
-                }
+    private func glass(_ outline: Path) -> some View {
+        if #available(iOS 26.0, *) {
+            Rectangle()
+                .fill(Color.white.opacity(0.001))
                 .frame(width: size.width, height: size.height)
+                .glassEffect(.regular, in: PathShape(path: outline))
+        } else {
+            ZStack {
+                PathShape(path: outline).fill(Theme.worldGlass)
+                PathShape(path: outline).stroke(Color.white.opacity(0.14), lineWidth: 1)
             }
+            .frame(width: size.width, height: size.height)
         }
     }
 }
 
-/// One glass shape: a ring (Earth's or a friend's) or a neck between Earth and a friend.
+/// One piece of the glass: a ring (Earth's, a friend's or a moment's) or a neck from the middle.
 struct GlassPart: Identifiable {
     let id: String
-    /// Where it is on screen.
-    let bounds: CGRect
-    /// Its outline, relative to `bounds`.
-    let local: Path
     /// Its outline on screen.
     let absolute: Path
 
-    init(id: String, absolute: Path) {
-        self.id = id
-        self.absolute = absolute
-        let box = absolute.boundingRect
-        bounds = box
-        local = absolute.offsetBy(dx: -box.minX, dy: -box.minY)
-    }
-
-    /// A ring for everyone visible (Earth and people), and a neck from the biggest of them (the one
-    /// in the middle; while two swap, whoever is bigger at that moment) to each other one close
-    /// enough to reach. The bubbles' radii are their glass.
+    /// A ring for everyone visible (Earth, people and moments), and a neck from the biggest of them
+    /// (the one in the middle; while two swap, whoever is bigger at that moment) to each other one
+    /// close enough to reach. The bubbles' radii are their glass.
     static func parts(for bubbles: [RenderedBubble], metrics: StageMetrics) -> [GlassPart] {
         let shown = bubbles.filter { $0.radius > 0.5 && ($0.id == OrbitChoreography.earth || WorldPhoto.hasPhoto($0.id)) }
         guard let hub = shown.max(by: { $0.radius < $1.radius }) else { return [] }
@@ -157,10 +136,10 @@ enum GlassNeck {
     }
 }
 
-/// v3's photos: people 1...9. Earth (0) is the globe.
+/// v3's photos: people 1...9 and the friends' moments (16...39). Earth (0) is the globe.
 enum WorldPhoto {
     static func hasPhoto(_ id: Int) -> Bool {
-        (1...9).contains(id)
+        (1...9).contains(id) || OrbitChoreography.momentIDs.contains(id)
     }
 
     /// A photo inside a ring of glass of radius `glass`: 5 points of glass, less on a small pin.
@@ -176,7 +155,15 @@ enum WorldPhoto {
     }
 
     static func image(for id: Int) -> UIImage? {
-        Person.samples[(id - 1) % Person.samples.count].photo
+        if let moment = OrbitChoreography.moment(id) {
+            return moments[(moment.friend - 1) * 4 + moment.index - 1]
+        }
+        return Person.samples[(id - 1) % Person.samples.count].photo
+    }
+
+    /// `moment-<friend>-<n>`: four from each of your six friends' weeks (places, coffee, food).
+    private static let moments: [UIImage?] = OrbitChoreography.momentIDs.map { id in
+        OrbitChoreography.moment(id).flatMap { UIImage(named: "moment-\($0.friend)-\($0.index)") }
     }
 
     /// How big the photo is drawn, in reference points: inside its ring of glass. Appearing, it pops
@@ -203,10 +190,14 @@ enum WorldPhoto {
 
 /// v3: the finger spinning everyone round the middle. Dragging turns everything with the finger
 /// (the angle it sweeps round the hub); letting go, it coasts to a stop. The stage turns everyone
-/// round the hub by this angle, and the globe turns on its axis with them.
+/// round the hub by this angle (all but Earth, which is either on the hub or parked in its
+/// corner), and the globe turns on its axis with them (`globeAngle`). Tapping someone unwinds it
+/// (`settle`), so the friends melting into Earth on its way to the corner meet it where it is.
 final class SpinDial {
     /// How long the coast takes to fade, in seconds (it is 95% done after three times this).
     static let coast = 0.55
+    /// How long unwinding takes.
+    static let settleTime = 0.7
 
     private var dragging = false
     private var grabbedAngle: Double = 0
@@ -215,19 +206,33 @@ final class SpinDial {
     private var restedAngle: Double = 0
     private var releasedAt: Double?
     private var velocity: Double = 0
+    private var settleFrom: Double = 0
+    private var settledAt: Double?
+    /// Whole turns taken off by `settle`, kept for the globe so it doesn't spin back with them.
+    private var unwound: Double = 0
 
     /// Radians, positive is clockwise on screen.
     func angle(at time: Double) -> Double {
         if dragging { return grabbedAngle + sweep }
+        if let settledAt, time - settledAt < Self.settleTime {
+            let x = min(max((time - settledAt) / Self.settleTime, 0), 1)
+            return settleFrom * (1 - x * x * (3 - 2 * x))
+        }
         guard let start = releasedAt else { return restedAngle }
         let elapsed = max(0, time - start)
         return restedAngle + velocity * Self.coast * (1 - exp(-elapsed / Self.coast))
+    }
+
+    /// What the globe turns by: the same, without the whole turns `settle` took off.
+    func globeAngle(at time: Double) -> Double {
+        angle(at: time) + unwound
     }
 
     /// `finger` is the finger's angle around Earth (radians, clockwise on screen).
     func drag(finger: Double, at time: Double) {
         if !dragging {
             grabbedAngle = angle(at: time)
+            settledAt = nil
             sweep = 0
             lastFinger = finger
             dragging = true
@@ -245,6 +250,20 @@ final class SpinDial {
         restedAngle = grabbedAngle + sweep
         self.velocity = min(max(velocity, -7), 7)
         releasedAt = time
+        settledAt = nil
+        dragging = false
+    }
+
+    /// Unwinds to no turn at all, the short way round.
+    func settle(at time: Double) {
+        let current = angle(at: time)
+        let turns = (current / (2 * .pi)).rounded()
+        unwound += turns * 2 * .pi
+        settleFrom = current - turns * 2 * .pi
+        settledAt = time
+        restedAngle = 0
+        releasedAt = nil
+        velocity = 0
         dragging = false
     }
 }

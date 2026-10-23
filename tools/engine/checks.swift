@@ -2,7 +2,7 @@ import Foundation
 
 func fmt(_ p: CGPoint) -> String { String(format: "(%.1f, %.1f)", Double(p.x), Double(p.y)) }
 let scenes: [OrbitScene] = [.you, .bump, .circle, .world, .collapse, .gate, .reveal, .space, .pins, .bloom]
-    + (1...9).map { OrbitScene.focus($0) }
+    + OrbitChoreography.homeCircle.map { OrbitScene.focus($0) }
 func isV3(_ scene: OrbitScene) -> Bool {
     switch scene {
     case .space, .pins, .bloom, .focus: true
@@ -109,10 +109,12 @@ do {
 }
 
 // 1e. v3: pins sit on the globe's visible face, inside Earth's glass (so no neck shows while they
-//     are pinned). In every constellation (Earth's, and each friend's after a tap), everyone round
-//     the middle stays within reach of a glass neck to it as they bob (`GlassNeck`: further than
-//     |r1 - r2| apart and closer than r1 + 2.5 r2), clear of their neighbours, inside the screen
-//     sideways (201 either side), below the status bar, and above the copy (`copyTop` 66).
+//     are pinned). Round Earth (your friends) and round a friend you tapped (their four moments),
+//     everyone stays within reach of a glass neck to the middle as they bob (`GlassNeck`: further
+//     than |r1 - r2| apart and closer than r1 + 2.5 r2), clear of their neighbours, inside the
+//     screen sideways (201 either side), below the status bar, and above the copy (`copyTop` 66).
+//     With a friend in the middle, Earth is parked in its corner, clear of the moments and out of
+//     neck's reach, and no one else shows.
 do {
     for id in OrbitChoreography.homeCircle {
         let person = OrbitChoreography.people.first { $0.id == id }!
@@ -129,20 +131,20 @@ do {
         let gap = hypot(pins[i].x - pins[j].x, pins[i].y - pins[j].y) - 2 * OrbitChoreography.pinRadius
         check(gap > 2, "pins: \(OrbitChoreography.homeCircle[i]) and \(OrbitChoreography.homeCircle[j]) overlap (gap \(gap))")
     }}
-    for id in 1...9 {
-        let friends = OrbitChoreography.friends(of: id)
-        check(Set(friends).count == friends.count && !friends.contains(id), "friends of \(id): \(friends)")
-        for other in friends {
-            check(OrbitChoreography.friends(of: other).contains(id), "friendship \(id)-\(other) goes one way")
-        }
+    let allMoments = OrbitChoreography.homeCircle.flatMap(OrbitChoreography.moments(of:))
+    check(Set(allMoments).count == 24 && allMoments.allSatisfy { OrbitChoreography.momentIDs.contains($0) }, "moments: \(allMoments)")
+    for id in allMoments {
+        let m = OrbitChoreography.moment(id)!
+        check(OrbitChoreography.moments(of: m.friend)[m.index - 1] == id, "moment \(id) maps back wrong")
     }
-    for center in [OrbitChoreography.earth] + Array(1...9) {
+    let corner = OrbitChoreography.homeCorner
+    for center in [OrbitChoreography.earth] + OrbitChoreography.homeCircle {
         let scene: OrbitScene = center == OrbitChoreography.earth ? .bloom : .focus(center)
         let player = Player(); player.play(.space, at: 0); _ = player.frame(1)
         player.play(.pins, at: 1); _ = player.frame(3)
         player.play(.bloom, at: 3); _ = player.frame(6)
         player.play(scene, at: 6)
-        let circle = center == OrbitChoreography.earth ? OrbitChoreography.homeCircle : [OrbitChoreography.earth] + OrbitChoreography.friends(of: center)
+        let circle = center == OrbitChoreography.earth ? OrbitChoreography.homeCircle : OrbitChoreography.moments(of: center)
         var nearest = CGFloat.infinity, farthest: CGFloat = 0, tightest = CGFloat.infinity, lowest = -CGFloat.infinity
         var bad = Set<String>()
         for step in 0..<1200 {
@@ -163,8 +165,22 @@ do {
                     tightest = min(tightest, gap)
                     if gap < 6 { bad.insert("\(id) and \(other) touch") }
                 }
+                if center != OrbitChoreography.earth {
+                    let e = s[OrbitChoreography.earth]
+                    let gap = hypot(f.center.x - e.center.x, f.center.y - e.center.y) - f.radius - e.radius
+                    if gap < 30 { bad.insert("\(id) crowds Earth in its corner") }
+                }
             }
-            let strays = s.filter { $0.radius > 0.5 && $0.id != center && !circle.contains($0.id) && $0.id <= 9 }
+            if center != OrbitChoreography.earth {
+                let e = s[OrbitChoreography.earth]
+                if hypot(e.center.x - corner.center.x, e.center.y - corner.center.y) > 1 || abs(e.radius - corner.radius) > 0.5 {
+                    bad.insert("Earth not in its corner")
+                }
+                let d = hypot(e.center.x - hub.center.x, e.center.y - hub.center.y)
+                if d < hub.radius + 2.5 * e.radius { bad.insert("Earth within a neck's reach of the middle") }
+            }
+            let strays = s.filter { $0.radius > 0.5 && $0.id != center && !circle.contains($0.id)
+                && !(center != OrbitChoreography.earth && $0.id == OrbitChoreography.earth) }
             if !strays.isEmpty { bad.insert("strays \(strays.map(\.id))") }
         }
         print(String(format: "  %@: %d round the middle, %.1f to %.1f from it, closest neighbours %.1f apart, lowest glass at %.1f",
@@ -177,7 +193,7 @@ do {
 // The two versions never mix in the app (each has its own onboarding screen), so each version's
 // scenes are interrupted only by its own.
 let families: [[OrbitScene]] = [[.you, .bump, .circle, .world, .collapse], [.gate, .reveal],
-                                [.space, .pins, .bloom, .focus(6), .focus(8), .focus(2)]]
+                                [.space, .pins, .bloom, .focus(6), .focus(5), .focus(2)]]
 var maxJump: CGFloat = 0, maxJumpV2: CGFloat = 0, maxJumpV3: CGFloat = 0
 for family in families { for a in family { for b in family { for c in family where c != b {
     let player = Player()

@@ -19,8 +19,9 @@ enum OrbitScene: Hashable {
     case pins
     /// The friends lift off into orbit round Earth, joined to it by necks of liquid glass.
     case bloom
-    /// A friend you tapped has the middle, globe-size, their own friends round them; Earth waits
-    /// among them as a way home.
+    /// A friend you tapped has the middle, globe-size, with four moments from their week (places,
+    /// coffee) budding out of them; everyone else melts into Earth, which parks small in the
+    /// top-left corner as the way home.
     case focus(Int)
 
     // MARK: v2
@@ -56,13 +57,16 @@ struct Keyframe {
 ///
 /// Bubble 0 is Earth, 1 is you, 2 is the friend you bump, 3...5 are your friends, 6...8 are
 /// theirs and 9 is one more for the ring. v2 also uses 10...15, small clear glass droplets with no
-/// photo. v3 uses Earth and 1...9, any of whom can have the middle. Coordinates are in the stage's
+/// photo. v3 uses Earth, your six friends (1...6) and their moments (16...39, four each, photos
+/// `moment-<friend>-<n>`). Coordinates are in the stage's
 /// 372 x 480 reference space, centered on the middle of the stage (v2's stage is the whole screen,
 /// so its coordinates reach about 400 above and below the centre).
 enum OrbitChoreography {
-    static let bubbleCount = 16
+    static let bubbleCount = 40
     /// v2: photo-less glass droplets.
     static let droplets = 10...15
+    /// v3: four moments from each of your friends' weeks, bubbles 16...39.
+    static let momentIDs = 16...39
 
     static func hasPhoto(_ id: Int) -> Bool { id >= 0 && id <= 9 }
     static let earth = 0
@@ -80,8 +84,8 @@ enum OrbitChoreography {
         case .reveal: [Keyframe(after: 0, layout: reveal)]
         case .space: [Keyframe(after: 0, layout: space)]
         case .pins: [Keyframe(after: 0, layout: pins)]
-        case .bloom: [Keyframe(after: 0, layout: constellation(center: earth))]
-        case .focus(let id): [Keyframe(after: 0, layout: constellation(center: id))]
+        case .bloom: [Keyframe(after: 0, layout: constellation)]
+        case .focus(let id): [Keyframe(after: 0, layout: focus(on: id))]
         }
     }
 
@@ -95,9 +99,12 @@ enum OrbitChoreography {
     /// The globe at rest: the point facing you, and how far away the camera is in Earth radii
     /// (far enough to be nearly flat-on, close enough for a touch of depth).
     static let globeView = (latitude: 25.0, longitude: 12.0, distance: 9.0)
-    /// A friend's pin on the globe, and Earth's glass when a friend has the middle.
+    /// A friend's pin on the globe.
     static let pinRadius: CGFloat = 14
-    static let satelliteEarthRadius: CGFloat = 32
+    /// Earth while a friend has the middle: small, in the top-left corner, under the status bar,
+    /// as the way home. The screen places it for its size and safe area (`placeHomeCorner`); the
+    /// default is an iPhone 17 Pro's.
+    static var homeCorner = (center: CGPoint(x: -148, y: -332), radius: CGFloat(19.4))
 
     /// The people (bubble ids 1...9, photos `friend-1`...`friend-9`) and where they live.
     static let people: [(id: Int, city: String, latitude: Double, longitude: Double)] = [
@@ -108,29 +115,46 @@ enum OrbitChoreography {
     /// Your friends: pinned on the globe, then in orbit round Earth.
     static let homeCircle = [1, 2, 3, 4, 5, 6]
 
-    /// Who knows whom: everyone has four or five friends, and friendship goes both ways, so the
-    /// friend you came from is always in the orbit of the friend you tap next.
-    static func friends(of id: Int) -> [Int] {
-        guard (1...9).contains(id) else { return homeCircle }
-        var out: [Int] = []
-        for step in [1, -1, 2, -2] {
-            out.append((id - 1 + step + 9) % 9 + 1)
-        }
-        // A few longer links, both ways: 1-5, 2-6, 3-7, 4-8.
-        let extra: [Int: Int] = [1: 5, 5: 1, 2: 6, 6: 2, 3: 7, 7: 3, 4: 8, 8: 4]
-        if let other = extra[id] { out.append(other) }
-        return out
+    /// A friend's four moments (bubble ids), empty for anyone else.
+    static func moments(of id: Int) -> [Int] {
+        guard homeCircle.contains(id) else { return [] }
+        let first = momentIDs.lowerBound + 4 * (id - 1)
+        return Array(first..<first + 4)
     }
 
-    /// The six places round the hub, deliberately uneven (angle in degrees, 0 to the right and
+    /// Whose moment a bubble is, and which of their four (1...4); nil if it isn't one.
+    static func moment(_ id: Int) -> (friend: Int, index: Int)? {
+        guard momentIDs.contains(id) else { return nil }
+        let offset = id - momentIDs.lowerBound
+        return (offset / 4 + 1, offset % 4 + 1)
+    }
+
+    /// The four places round a friend in the middle, a little uneven (angle in degrees, 0 to the
+    /// right and clockwise; distance from the middle; glass radius): within reach of a glass neck,
+    /// clear of the copy below and of Earth in the corner.
+    static let momentPlaces: [(angle: Double, distance: CGFloat, radius: CGFloat)] = [
+        (-118, 148, 33), (-24, 144, 30), (56, 138, 31), (150, 142, 29),
+    ]
+
+    /// Earth in the top-left corner for a screen of `size` whose safe area starts `safeTop` from
+    /// the top: 21 points of glass, 20 in from the side, just under the status bar. Mirrors
+    /// `StageMetrics` (the stage fills the screen).
+    static func placeHomeCorner(in size: CGSize, safeTop: CGFloat, safeLeading: CGFloat) {
+        guard size.width > 0, size.height > 0 else { return }
+        let scale = min(max(min(size.width / 372, size.height / 480), 0.1), 1.3)
+        let glass: CGFloat = 21
+        let x = safeLeading + 20 + glass, y = max(safeTop, 20) + 16
+        homeCorner = (CGPoint(x: (x - size.width / 2) / scale, y: (y - size.height / 2) / scale), glass / scale)
+    }
+
+    /// The six places round Earth, deliberately uneven (angle in degrees, 0 to the right and
     /// clockwise; distance from the hub; glass radius). Each is within reach of a glass neck from
     /// the hub (`GlassNeck`) and clear of the copy below.
     static let slots: [(angle: Double, distance: CGFloat, radius: CGFloat)] = [
         (-95, 150, 34), (-30, 146, 29), (22, 140, 32), (78, 132, 30), (142, 140, 27), (-160, 150, 31),
     ]
-    /// Where each person goes round the hub when they can: your friends on the side their city is
-    /// on, the others somewhere sensible. Taken places are skipped.
-    static let homeSlot: [Int: Int] = [1: 5, 4: 0, 6: 1, 5: 2, 3: 3, 2: 4, 7: 1, 8: 2, 9: 5]
+    /// Where each friend goes round Earth: on the side their city is on.
+    static let homeSlot: [Int: Int] = [1: 5, 4: 0, 6: 1, 5: 2, 3: 3, 2: 4]
 
     static func city(of id: Int) -> String {
         people.first { $0.id == id }?.city ?? ""
@@ -164,28 +188,25 @@ enum OrbitChoreography {
         return BubbleLayout(targets: targets)
     }
 
-    /// `center` (Earth, or a friend you tapped) at the hub, its circle round it on necks of glass,
-    /// each bobbing on a small circle so the necks breathe. With a friend in the middle, Earth takes
-    /// the place that friend left, and stays as a way home. Anyone not in the circle melts into
-    /// Earth; anyone new buds out of the one in the middle.
-    static func constellation(center: Int) -> BubbleLayout {
-        var targets = (0..<bubbleCount).map { _ in BubbleTarget(anchor: earth) }
-        targets[center] = BubbleTarget(center: bloomEarth.center, radius: bloomEarth.radius, jelly: true)
+    /// Earth at the hub, your friends round it on necks of glass, each bobbing on a small circle so
+    /// the necks breathe. Coming back from a friend's moments, Earth flies home from its corner,
+    /// the friend glides back to their place, their moments melt back into them, and everyone else
+    /// buds out of Earth once it is back.
+    static var constellation: BubbleLayout {
+        var targets = (0..<bubbleCount).map { id in
+            BubbleTarget(anchor: moment(id)?.friend ?? earth)
+        }
+        targets[earth] = BubbleTarget(center: bloomEarth.center, radius: bloomEarth.radius, jelly: true)
 
-        let circle = center == earth ? homeCircle : [earth] + friends(of: center)
         var place: [Int: Int] = [:]
         var taken = Set<Int>()
-        if center != earth, let left = homeSlot[center] {
-            place[earth] = left
-            taken.insert(left)
-        }
-        for id in circle where place[id] == nil {
+        for id in homeCircle {
             if let wanted = homeSlot[id], !taken.contains(wanted) {
                 place[id] = wanted
                 taken.insert(wanted)
             }
         }
-        for id in circle where place[id] == nil {
+        for id in homeCircle where place[id] == nil {
             // The free place nearest the one it wanted.
             let wanted = homeSlot[id] ?? 0
             let free = slots.indices.filter { !taken.contains($0) }
@@ -195,27 +216,52 @@ enum OrbitChoreography {
             }
         }
 
-        for (order, id) in circle.enumerated() {
+        for (order, id) in homeCircle.enumerated() {
             guard let index = place[id] else { continue }
             let slot = slots[index]
-            let radians = slot.angle * .pi / 180
-            let spot = CGPoint(x: bloomEarth.center.x + slot.distance * CGFloat(cos(radians)),
-                               y: bloomEarth.center.y + slot.distance * CGFloat(sin(radians)))
-            let phase = Double(id) * 1.9
-            let bob: CGFloat = 4
-            targets[id] = BubbleTarget(
-                center: CGPoint(x: spot.x + bob * CGFloat(cos(phase)), y: spot.y + bob * CGFloat(sin(phase))),
-                radius: id == earth ? satelliteEarthRadius : slot.radius,
-                anchor: center,
-                appearDelay: 0.2 + 0.09 * Double(order),
-                moveDelay: 0.05 * Double(order),
-                jelly: true,
-                orbitRate: id.isMultiple(of: 2) ? 0.5 : -0.43,
-                orbitCenter: spot,
-                budsFromSurface: true
-            )
+            targets[id] = orbiting(id, around: bloomEarth.center, angle: slot.angle, distance: slot.distance,
+                                   radius: slot.radius, anchor: earth,
+                                   appearDelay: 0.45 + 0.08 * Double(order), moveDelay: 0.05 * Double(order))
         }
         return BubbleLayout(targets: targets)
+    }
+
+    /// A friend you tapped takes the middle, globe-size. Everyone else melts into Earth, which then
+    /// shrinks and flies to the top-left corner (`homeCorner`) with them inside, and the friend's
+    /// four moments bud out of them one by one.
+    static func focus(on id: Int) -> BubbleLayout {
+        var targets = (0..<bubbleCount).map { _ in BubbleTarget(anchor: earth) }
+        targets[id] = BubbleTarget(center: bloomEarth.center, radius: bloomEarth.radius, jelly: true)
+        // Waits a moment, so the others are on their way into it before it leaves.
+        targets[earth] = BubbleTarget(center: homeCorner.center, radius: homeCorner.radius, moveDelay: 0.3, jelly: true)
+        for (order, moment) in moments(of: id).enumerated() {
+            let place = momentPlaces[order]
+            targets[moment] = orbiting(moment, around: bloomEarth.center, angle: place.angle, distance: place.distance,
+                                       radius: place.radius, anchor: id,
+                                       appearDelay: 0.55 + 0.1 * Double(order), moveDelay: 0)
+        }
+        return BubbleLayout(targets: targets)
+    }
+
+    /// Someone round the hub: at `angle` and `distance` from it, bobbing on a small circle of their
+    /// own, budding out of `anchor`'s surface if they are new.
+    private static func orbiting(_ id: Int, around hub: CGPoint, angle: Double, distance: CGFloat, radius: CGFloat,
+                                 anchor: Int, appearDelay: Double, moveDelay: Double) -> BubbleTarget {
+        let radians = angle * .pi / 180
+        let spot = CGPoint(x: hub.x + distance * CGFloat(cos(radians)), y: hub.y + distance * CGFloat(sin(radians)))
+        let phase = Double(id) * 1.9
+        let bob: CGFloat = 4
+        return BubbleTarget(
+            center: CGPoint(x: spot.x + bob * CGFloat(cos(phase)), y: spot.y + bob * CGFloat(sin(phase))),
+            radius: radius,
+            anchor: anchor,
+            appearDelay: appearDelay,
+            moveDelay: moveDelay,
+            jelly: true,
+            orbitRate: id.isMultiple(of: 2) ? 0.5 : -0.43,
+            orbitCenter: spot,
+            budsFromSurface: true
+        )
     }
 
     private static func angleBetween(_ a: Double, _ b: Double) -> Double {

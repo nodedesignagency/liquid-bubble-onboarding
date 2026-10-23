@@ -4,10 +4,10 @@
 # (WorldPhoto), the dot grid, the copy, the buttons, and a finger showing the swipe and the taps.
 # Keep the timings (V3_*) in sync with WorldOnboardingView and tools/engine/record.swift (v3 script).
 #
-# What it can't show: the city (MapKit's 3D Paris) and the satellite snapshots the zoom starts
-# from. The city is a labelled stand-in; the snapshots are the globe itself in plain satellite
-# colours, losing colour as the ring sweeps over them, so the motion and framing are meaningful
-# but not the imagery. Glass is drawn the way it looks before iOS 26 (a dark outline, a frosted
+# What it can't show: the city (MapKit's 3D Paris) and the satellite snapshots the zoom is drawn
+# from. The city is a labelled stand-in; the snapshots (flat at first, then on the sphere) are the
+# globe itself in plain stand-in satellite colours (`globe.py`'s `satellite`), dissolving into the
+# hologram, so the motion and framing are meaningful but not the imagery. Glass is drawn the way it looks before iOS 26 (a dark outline, a frosted
 # dome); on iOS 26 it is real Liquid Glass. The globe's scale at the handover (METERS_PER_POINT) is
 # measured on the device; here it is assumed. Nunito stands in for SF Pro Rounded. iPhone 17 Pro
 # sized (402 x 874 pt).
@@ -36,16 +36,12 @@ METERS_PER_POINT = 4.0                                               # assumed h
 START_ROLL = 30.0                                                    # 360 - EarthZoom.heading
 NAMES = {1: "Maya", 2: "Kwame", 3: "Ines", 4: "Kai", 5: "Amara", 6: "Zoe", 7: "Omar", 8: "Layla", 9: "Lena"}  # Person.samples
 CITIES = {1: "London", 2: "Lagos", 3: "Johannesburg", 4: "Istanbul", 5: "Nairobi", 6: "Dubai", 7: "Berlin", 8: "Cairo", 9: "Lisbon"}
-def friends_of(i):                                                   # OrbitChoreography.friends(of:)
-    out = [(i - 1 + s + 9) % 9 + 1 for s in (1, -1, 2, -2)]
-    extra = {1: 5, 5: 1, 2: 6, 6: 2, 3: 7, 7: 3, 4: 8, 8: 4}
-    return out + ([extra[i]] if i in extra else [])
-# The globe's colours (GlobePalette): PALETTE=dusk (default), afterglow, midnight or lavender.
-PALETTE = {"dusk": holo.DUSK, "afterglow": holo.AFTERGLOW, "midnight": holo.MIDNIGHT,
-           "lavender": holo.LAVENDER}[os.environ.get("PALETTE", "dusk")]
-# A plain satellite look for the snapshots' stand-in (no sheen, aura or glow).
-SATELLITE = holo.palette(0x0B2033, 0x0F2A40, 0x2A3B48, 0x6F7556, 0x6F7556, 0x6F7556, 0x6F7556, 0x000000, 0x000000,
-                         sheen=0.0, backlight=0.0)
+MOMENTS = range(16, 40)                                               # OrbitChoreography.momentIDs
+def moment_of(i): return ((i - 16) // 4 + 1, (i - 16) % 4 + 1)       # OrbitChoreography.moment(_:)
+def has_photo(i): return 1 <= i <= 9 or i in MOMENTS                 # WorldPhoto.hasPhoto
+# The globe's colours (GlobePalette): PALETTE=aurora (default), dusk, afterglow, midnight or lavender.
+PALETTE = {"aurora": holo.AURORA, "dusk": holo.DUSK, "afterglow": holo.AFTERGLOW, "midnight": holo.MIDNIGHT,
+           "lavender": holo.LAVENDER}[os.environ.get("PALETTE", "aurora")]
 
 # WorldOnboardingView's sequence, with the city rendered and the imagery in at once
 V3_COVER = 0.8                       # the city fades in, the gate's shade with it
@@ -53,15 +49,15 @@ V3_DOME = 0.45                       # the dome starts rising (showDome(after: 0
 V3_DRAG = 1.5                        # the finger lands on the dome and swipes up
 V3_PASS = 2.3                        # and lets go: the dome sweeps off
 V3_ZOOM = V3_PASS + 0.3 + 1.35       # the map rises (EarthZoom.rise), then the zoom out
-V3_ZOOM_LEN = 4.6                    # EarthZoom.zoomOut
+V3_ZOOM_LEN = 5.0                    # EarthZoom.zoomOut
 V3_SPACE_TEXT = V3_ZOOM + V3_ZOOM_LEN * 0.8
 V3_PINS = V3_ZOOM + V3_ZOOM_LEN + 0.15
 V3_BLOOM = V3_PINS + 1.4
 V3_FOOTER = V3_BLOOM + 1.2
-TAPS = [(13.0, 6), (15.6, 8), (18.2, 0)]                              # record.swift: focus(6), focus(8), home
-V3_CONTINUE = 20.6
+TAPS = [(13.2, 6), (16.0, 0), (17.6, 4), (20.0, 0)]                 # record.swift: Zoe, Earth, Kai, Earth
+V3_CONTINUE = 21.0
 V3_BACK = V3_CONTINUE + 1.0
-V3_BACK_LEN = 3.4                    # EarthZoom.zoomBack
+V3_BACK_LEN = 3.6                    # EarthZoom.zoomBack
 V3_SETTLE = V3_BACK + V3_BACK_LEN    # the map tilts back up to the tower (EarthZoom.rise)
 V3_DOME_AGAIN = V3_SETTLE + 1.3 * 0.6
 DRIFT = 1.2                          # degrees per second once the friends are in orbit
@@ -84,24 +80,31 @@ FOCAL = REST["radius"] * math.sqrt(REST["distance"] ** 2 - 1)
 END_SCALE = EARTH_RADIUS * (REST["distance"] - 1) / FOCAL
 DIAG = math.hypot(W, H)
 SCREEN_CENTER = (W / 2, H / 2)
-REACH = DIAG / 2 + 40
+SPANS = []                                                            # ZoomImagery.fetch
 span = METERS_PER_POINT * DIAG * 1.45
-while span * 3.2 <= 4.6e6: span *= 3.2
-REVEAL_TO = max(span * 0.8 / DIAG, METERS_PER_POINT * 2)              # the coarsest snapshot stops covering
-REVEAL_FROM = max(REVEAL_TO / 7, METERS_PER_POINT * 1.2)
+while span <= 6.0e6: SPANS.append(span); span *= 3.2
+LAYERS = SPANS[-3:]                                                   # the globe's regional snapshots (and the world)
+def scale_for_radius(r): return EARTH_RADIUS * (math.sqrt(1 + (FOCAL / r) ** 2) - 1) / FOCAL
+_finer = [x for x in SPANS if x < LAYERS[0] * 0.9]
+SPHERE_FROM = max((_finer[-1] * 0.8 / DIAG / 0.5 if _finer else METERS_PER_POINT * 1.5) * 1.05, METERS_PER_POINT * 1.2)
+SPHERE_TO = SPHERE_FROM * 1.3
+DISSOLVE_FROM = max(scale_for_radius(290), SPHERE_TO * 1.2)
+DISSOLVE_TO = scale_for_radius(145)
+DRIFT_FROM = math.sqrt(DISSOLVE_FROM * DISSOLVE_TO)
 TOTAL = math.log(END_SCALE) - math.log(METERS_PER_POINT)
-_middle = (math.log(math.sqrt(REVEAL_FROM * REVEAL_TO)) - math.log(METERS_PER_POINT)) / TOTAL
-lo, hi = 0.0, 1.0
-for _ in range(40):
+_middle = (math.log(DRIFT_FROM) - math.log(METERS_PER_POINT)) / TOTAL
+def _profile(dip):
+    cum = [0.0]
+    for step in range(256):
+        u = (step + 0.5) / 256
+        cum.append(cum[-1] + 6 * u * (1 - u) * (1 - 0.8 * math.exp(-((u - dip) / 0.13) ** 2)))
+    return [c / cum[-1] for c in cum]
+lo, hi = 0.1, 0.95
+for _ in range(30):
     mid = (lo + hi) / 2
-    if ease(mid) < _middle: lo = mid
+    if _profile(mid)[int(mid * 256)] < _middle: lo = mid
     else: hi = mid
-DIP = (lo + hi) / 2
-_cum = [0.0]
-for step in range(256):
-    u = (step + 0.5) / 256
-    _cum.append(_cum[-1] + 6 * u * (1 - u) * (1 - 0.55 * math.exp(-((u - DIP) / 0.1) ** 2)))
-DEPTHS = [c / _cum[-1] for c in _cum]
+DEPTHS = _profile((lo + hi) / 2)
 
 def depth_at(u):
     x = min(max(u, 0), 1) * 256; i = min(int(x), 255); fr = x - i
@@ -109,24 +112,19 @@ def depth_at(u):
 def zscale(u): return math.exp(math.log(METERS_PER_POINT) + TOTAL * depth_at(u))
 def between(s, a, b): return ease((math.log(s) - math.log(a)) / max(math.log(b) - math.log(a), 1e-6))
 def roll_at(u): return START_ROLL * (1 - ease(depth_at(u) / 0.75))
-def sweep_at(u):
-    s = zscale(u)
-    if s <= REVEAL_FROM: return 0.0
-    return min(max((math.log(s) - math.log(REVEAL_FROM)) / (math.log(REVEAL_TO) - math.log(REVEAL_FROM)), 0), 1)
+def shows_snapshots(u): return zscale(u) < SPHERE_TO
 
 def globe_on_path(u, rest_lon):
     s = zscale(u)
     dist = 1 + s * FOCAL / EARTH_RADIUS
     radius = FOCAL / math.sqrt(dist * dist - 1)
-    k = between(s, REVEAL_TO, END_SCALE)
-    sw = sweep_at(u)
-    ring = REACH * sw ** 1.25
+    k = between(s, DRIFT_FROM, END_SCALE)
+    h = between(s, DISSOLVE_FROM, DISSOLVE_TO)
     return dict(cx=SCREEN_CENTER[0] + (REST["center"][0] - SCREEN_CENTER[0]) * k,
                 cy=SCREEN_CENTER[1] + (REST["center"][1] - SCREEN_CENTER[1]) * k,
                 radius=radius, dist=dist, lat=CITY[0] + (REST["lat"] - CITY[0]) * k,
-                lon=CITY[1] + (rest_lon - CITY[1]) * k, roll=roll_at(u), glow=k,
-                opacity=1.0 if s > REVEAL_FROM else 0.0,
-                reveal=(SCREEN_CENTER[0], SCREEN_CENTER[1], ring, max(28, ring * 0.12)) if sw < 1 else None)
+                lon=CITY[1] + (rest_lon - CITY[1]) * k, roll=roll_at(u), glow=h, satellite=1 - h,
+                opacity=between(s, SPHERE_FROM, SPHERE_TO))
 
 def lon_at(t):
     if t < V3_BLOOM: return REST["lon"]
@@ -139,9 +137,12 @@ def progress(t):
     return min((t - V3_ZOOM) / V3_ZOOM_LEN, 1)
 
 def stack_opacity(t, u):
-    if u is None or sweep_at(u) >= 1: return 0.0
-    if t >= V3_BACK: return ease((V3_BACK_LEN - (t - V3_BACK)) / 0.35)
-    return ease((t - V3_ZOOM) / 0.35)
+    if u is None or not shows_snapshots(u): return 0.0
+    if t >= V3_BACK: return ease((V3_BACK_LEN - (t - V3_BACK)) / 0.6)
+    return ease((t - V3_ZOOM) / 0.6)
+def nudge(t):                                                         # WorldOnboardingView.nudge
+    phase = (t % 2.4) / 0.8
+    return math.sin(math.pi * phase) * 4 if phase < 1 else 0.0
 
 # ---- the gate ----
 DOME_R = W * 0.62; DOME_TOP = H * 0.76
@@ -202,13 +203,18 @@ def headline_lines(key):
     if key == "space": return [("Everyone you love,", INK), ("in one orbit.", INK)], 2
     if key == "meet": return [("Meet Orbit.", INK), ("Your friends, always", INK2), ("within reach.", INK2)], 1
     i = int(key[5:])
-    return [(f"{NAMES[i]}'s orbit.", INK), (f"{CITIES[i]} · {len(friends_of(i))} friends", INK2), ("Tap Earth to come back.", INK2)], 1
+    return [(f"{NAMES[i]}'s orbit.", INK), (f"This week in {CITIES[i]}.", INK2), ("Tap Earth to come back.", INK2)], 1
 
 # ---- drawing ----
 f = lambda w, s: ImageFont.truetype(os.path.join(fonts, f"nunito-{w}.ttf"), int(s * S))
 head_font, button_font, legal_font, note_font, hint_font = f(700, 27), f(700, 17), f(400, 12), f(600, 13), f(700, 15)
 photos = {i: Image.open(os.path.join(assets, f"friend-{i}.imageset/friend-{i}.jpg")).convert("RGB").resize((360, 360), Image.LANCZOS)
           for i in range(1, 10)}
+for i in MOMENTS:
+    friend, n = moment_of(i)
+    path = os.path.join(assets, f"moment-{friend}-{n}.imageset/moment-{friend}-{n}.jpg")
+    photos[i] = (Image.open(path).convert("RGB").resize((360, 360), Image.LANCZOS) if os.path.exists(path)
+                 else Image.new("RGB", (360, 360), (90, 110, 120)))
 
 def put_text(img, x, y, line, font, color, alpha):
     """Text at `alpha`, through a mask: Pillow's RGBA drawing ignores a fill's alpha for text."""
@@ -271,10 +277,6 @@ SHADE = np.maximum(0.32 * np.clip(1 - PY / 130, 0, 1), 0.34 * np.clip((PY - H * 
 def grid_opacity(t):
     return fade(t, V3_BLOOM, 1.0) * (1 - fade(t, V3_CONTINUE, 0.8))
 
-def saturate(rgb, amount, bright):
-    grey = rgb.mean(axis=-1, keepdims=True)
-    return np.clip(grey + (rgb - grey) * amount + bright, 0, 1)
-
 rows = defaultdict(list)
 with open(frames_csv) as fh:
     for r in csv.DictReader(fh):
@@ -296,20 +298,20 @@ for fi in sorted(rows):
         cover = 1 - (1 - min(t / V3_COVER, 1)) ** 2 if t < V3_ZOOM else 1.0
         rgb = CANVAS + (CITY_RGB - CANVAS) * cover
         labels.append(("stand-in: MapKit's 3D Paris, the Eiffel Tower", 0.5 * H, (40, 40, 48)))
-    # the snapshots: the real Earth at the zoom's scale, losing colour as the ring sweeps over it
+    # the flat snapshots (stand-in: the real Earth's colours on the globe, which they match)
     if u is not None and stack > 0:
-        sw = sweep_at(u); s = zscale(u)
+        s = zscale(u)
         dist = 1 + s * FOCAL / EARTH_RADIUS; radius = FOCAL / math.sqrt(dist * dist - 1)
         srgb, sa = holo.globe(PX, PY, SCREEN_CENTER[0], SCREEN_CENTER[1], radius, dist, CITY[0], CITY[1], roll=roll_at(u),
-                              holo=0, glow=0, palette=SATELLITE)
-        srgb = saturate(srgb, 1 - 0.65 * sw, -0.14 * sw)
+                              glow=0, palette=PALETTE, satellite=1)
         rgb = rgb * (1 - stack) + (srgb + rgb * (1 - sa[..., None])) * stack
+    if u is not None and 0 < u < 1 and zscale(u) < DISSOLVE_FROM:
         labels.append(("stand-in: satellite snapshots", 0.12 * H, (230, 230, 235)))
     # the gate's shade over the city
     shade = gate_shade(t)
     if shade > 0.001: rgb = rgb * (1 - (SHADE * shade)[..., None])
     # the glass (the outline it has before iOS 26): a ring for everyone, a neck from the middle
-    shown = [b for b in bubbles.values() if b[3] > 0.5 and b[0] <= 9]
+    shown = [b for b in bubbles.values() if b[3] > 0.5 and (b[0] == 0 or has_photo(b[0]))]
     glass = Image.new("L", (W * S * 2, H * S * 2), 0); gd = ImageDraw.Draw(glass); q = S * 2
     if shown:
         hub = max(shown, key=lambda b: b[3])
@@ -333,14 +335,14 @@ for fi in sorted(rows):
         g = globe_on_path(u, lon_at(t))
     elif u is not None:
         g = dict(cx=REST["center"][0], cy=REST["center"][1], radius=REST["radius"], dist=REST["distance"],
-                 lat=REST["lat"], lon=lon_at(t), roll=0, glow=1, opacity=1, reveal=None)
+                 lat=REST["lat"], lon=lon_at(t), roll=0, glow=1, opacity=1, satellite=0)
         e = bubbles.get(0)
         if e and e[3] > 0.5:
             g["cx"], g["cy"] = pt(e[1], e[2])
             glass_r = e[6] if (e[7] or e[8]) else e[3]
             g["radius"] = glass_r * GLOBE_R / HUB_R * SCALE
     # photos melting back into Earth slip under the globe (but over the glass)
-    leaving = sorted((b for b in bubbles.values() if 1 <= b[0] <= 9 and b[3] > 0.5 and b[5] and not b[7]), key=lambda b: b[4])
+    leaving = sorted((b for b in bubbles.values() if has_photo(b[0]) and b[3] > 0.5 and b[5] and not b[7]), key=lambda b: b[4])
     if any(photo_radius(b) >= 0.25 for b in leaving):
         under = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
         for b in leaving:
@@ -349,19 +351,18 @@ for fi in sorted(rows):
         rgb = np.asarray(under, np.float32) / 255
     if g is not None and g["opacity"] > 0:
         reach = g["radius"] * 3
-        rv = g["reveal"]
         x0 = max(int((g["cx"] - reach) * S), 0); x1 = min(int((g["cx"] + reach) * S) + 1, W * S)
         y0 = max(int((g["cy"] - reach) * S), 0); y1 = min(int((g["cy"] + reach) * S) + 1, H * S)
         if x1 > x0 and y1 > y0:
             grgb, ga = holo.globe(PX[y0:y1, x0:x1], PY[y0:y1, x0:x1], g["cx"], g["cy"], g["radius"], g["dist"], g["lat"], g["lon"],
-                                  roll=g["roll"], glow=g["glow"], opacity=g["opacity"], time=t, reveal=rv,
-                                  palette=PALETTE)
+                                  roll=g["roll"], glow=g["glow"], opacity=g["opacity"], time=t,
+                                  palette=PALETTE, satellite=g["satellite"])
             rgb[y0:y1, x0:x1] = grgb + rgb[y0:y1, x0:x1] * (1 - ga[..., None])
     img = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8))
     for text, y, col in labels:
         put_text(img, 40 * S, y * S, text, note_font, col, 0.8)
     # photos, on top of the globe; budding, they form on top (the ones melting away are drawn above)
-    order = sorted((b for b in bubbles.values() if 1 <= b[0] <= 9 and b[3] > 0.5 and (b[7] or not b[5])),
+    order = sorted((b for b in bubbles.values() if has_photo(b[0]) and b[3] > 0.5 and (b[7] or not b[5])),
                    key=lambda b: (1000 + b[4]) if b[7] else b[4])
     for b in order:
         pr = photo_radius(b)
@@ -415,16 +416,17 @@ for fi in sorted(rows):
         img.paste(Image.new("RGB", img.size, (255, 255, 255)), (0, 0), rim_canvas)
         ha = hint_opacity(t)
         if ha > 0.002:
-            hy = DOME_TOP + offset - 46
-            cx, cy = W / 2, hy - 12 + 2 * math.sin(t * 3.4) - 1
-            chev = Image.new("L", img.size, 0)
-            ImageDraw.Draw(chev).line([((cx - 6) * S, (cy + 3) * S), (cx * S, (cy - 3) * S), ((cx + 6) * S, (cy + 3) * S)],
-                                      fill=int(255 * ha), width=int(2.4 * S), joint="curve")
-            img.paste(Image.new("RGB", img.size, (255, 255, 255)), (0, 0), chev)
+            # like Wabi's: the words on the glass, under a soft rounded handle that lifts now and then
+            hy = DOME_TOP + offset + 58
+            cy = hy - 15.5 - nudge(t)
+            handle = Image.new("L", img.size, 0)
+            ImageDraw.Draw(handle).rounded_rectangle(((W / 2 - 18) * S, (cy - 2.5) * S, (W / 2 + 18) * S, (cy + 2.5) * S),
+                                                     radius=2.5 * S, fill=int(255 * 0.75 * ha))
+            img.paste(Image.new("RGB", img.size, (255, 255, 255)), (0, 0), handle)
             line = "Swipe up to enter"
             tw = ImageDraw.Draw(img).textlength(line, font=hint_font)
-            shadowed_text(img, (W * S - tw) / 2, (hy - 2) * S, line, hint_font, ha)
-    # the finger: the swipe, the taps on Zoe, Layla and Earth, and "Continue with Apple"
+            shadowed_text(img, (W * S - tw) / 2, (hy - 1) * S, line, hint_font, ha * 0.92)
+    # the finger: the swipe, the taps on Zoe, Earth, Kai and Earth, and "Continue with Apple"
     touches = []
     if V3_DRAG - 0.1 <= t <= V3_PASS + 0.15:
         a = min(fade(t, V3_DRAG - 0.1, 0.1), 1 - fade(t, V3_PASS, 0.15))

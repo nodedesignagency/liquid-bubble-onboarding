@@ -38,7 +38,8 @@ locally, but the session proxy refused to push tags).
   looked the same as Wabi, so it is saved as is. See "v2" below.
 - **v3** (current): dark; pull back from a real city to a glowing holographic globe (after the
   Bump app's Earth zoom and the Blink app's globe), friends pinned on it lift off into orbit,
-  joined to Earth by necks of liquid glass (after the AiOS concept). See "v3" below.
+  joined to Earth by necks of liquid glass (after the AiOS concept); tap a friend for moments from
+  their week. See "v3" below.
 
 ## v3
 
@@ -63,6 +64,19 @@ colours that pop. Then they picked the colours of a FlightElite onboarding (a su
 royal blue #222EB4, violet #8759F6, orchid #DD92E2, blush #EFB0C3, peach #E7C69D, plum #571768) and
 asked for four versions in that hue, "just colors and shadow, other is good".
 
+The next recording (gate, ring sweep, six friends, tap to focus): "very good", but they hated the
+ring sweeping the map into the globe ("before one was way better, just wanted you to make that
+better"), saw a sudden change at the Eiffel Tower when the live 3D map handed over to the flat
+satellite snapshot (pale photogrammetry to a dark photo with the tower's long shadow), picked
+"aurora" from a sheet of six globes made in another chat (pearl, chrome, nebula, electric, aurora,
+sunset holo), wanted a tap on a friend to send everyone else into the globe and the globe to the
+top-left corner (not the friends staying and moving, which looked "pretty weird"), saw sharp cuts
+in the glass where necks met rings (each glass shape's view clipped the blend at its bounds), asked
+for the swipe-up hint like Wabi's without the arrow ("something rounded"), and for photos of places
+and coffee, not only people, from a stock library (they suggested Mobbin, which only has app
+screenshots; the photos came from Magnific's Freepik stock instead). One screenshot had a red
+vertical line between the subtitle and the buttons with no comment: asked what it meant.
+
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
   `BubbleEngine` (settled on its first scene in `init`, passed to `BubbleStage(engine:)`, never
@@ -74,22 +88,31 @@ asked for four versions in that hue, "just colors and shadow, other is good".
      heading 330), waiting each time until MapKit has fully rendered it (`isReady`: rendered, or
      never started rendering because it had it), so the rise later shows only cached ground. As
      soon as the map has a size, `ZoomImagery` fetches satellite snapshots of the same spot
-     (`MKMapSnapshotter`), each 3.2x wider, up to 4,600 km (first 1100pt at 3x, the rest 800pt
-     at 2x); the gate waits for them too (at most 4 s).
+     (`MKMapSnapshotter`), each 3.2x wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt
+     at 2x; under 20 km drawn with realistic elevation like the live map, so the handover doesn't
+     jump), and one of the whole world (`MKMapRect.world`, 1536pt at 2x). Each is measured on
+     itself (scale, and whether it is Web Mercator: a step east and a step north of the city; the
+     world fitted on four points and checked on a fifth); the gate waits for them (at most 4 s).
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
-     iOS 26) rises from below (`SpringCurve.domeIn`), "Swipe up to enter" and a bobbing chevron
-     46pt above it. Dragging lifts it with resistance (`EarthLift`, as v2); letting go above 90pt,
+     iOS 26) rises from below (`SpringCurve.domeIn`). Like Wabi's gate (on Mobbin), the hint sits
+     on the glass, 58pt below its top: a soft rounded handle (36x5) that lifts 4pt every 2.4 s
+     over "Swipe up to enter", no arrow. Dragging lifts it with resistance (`EarthLift`, as v2); letting go above 90pt,
      a flick, or a tap on it enters, else it springs back. Entering, it sweeps up off the screen
      (`domeOut`) over the city.
   3. Rise (0.3 s later, 1.3 s, UIKit camera animation): pitch to 0, distance 2.6 km.
-  4. Zoom out (4.6 s, `ZoomPath`): scale eased in log space, slowed where the globe sweeps in.
-     `ZoomStack` crossfades the snapshots by scale (a finer one fades out between covering the
-     screen and covering half of it), turned by the map's heading and unwinding to north up.
-     The globe is revealed inside a circle growing from the city with a glowing ring at its edge
-     (`GlobeState.reveal`), from a seventh of the scale where the coarsest snapshot stops covering
-     up to it; the snapshots lose colour and darken as it sweeps. Then the globe drifts from the
-     screen's middle to its place and turns from Paris to 25N 12E.
+  4. Zoom out (5 s, `ZoomPath`): scale eased in log space, slowest during the dissolve (a dip
+     placed by bisection). `ZoomStack` fades in over the map (0.6 s) and crossfades the snapshots
+     by scale (a finer one fades out between covering the screen and covering half of it), turned
+     by the map's heading and unwinding to north up. Around 280 m/pt, once the snapshot finer than
+     the globe's finest has faded (the sphere and the flat picture differ by under 3pt at the
+     corners), the globe takes over (`sphereFrom`-`sphereTo`) with the same imagery on the sphere
+     (`GlobeImagery`: the world plus the three widest regional snapshots, Web Mercator mapped in
+     the shader), so the real Earth pulls back into a ball with a thin blue atmosphere. With the
+     whole Earth in view (globe radius 290pt to 145pt, about 3.3-4.2 s) it dissolves in place into
+     the hologram, coast on coast, its aura growing; meanwhile it drifts from the screen's middle
+     to its place and turns from Paris to 25N 12E. (Replaced the ring sweep the user hated, and the
+     older flat crossfade whose doubled coastlines came from a flat Mercator photo under a sphere.)
   5. "Everyone you love, / in one orbit." under the globe; pins (`.pins`): Earth's glass seeps out
      from under the globe and six friends pop up as pins on their cities (London, Lagos,
      Johannesburg, Istanbul, Nairobi, Dubai; `OrbitChoreography.people`, `homeCircle`), with a white
@@ -98,16 +121,22 @@ asked for four versions in that hue, "just colors and shadow, other is good".
      six places round Earth (`OrbitChoreography.slots`, each person's preferred place in
      `homeSlot`, on their city's side), necks of glass from Earth's ring (`GlassNeck`), bobbing so
      the necks breathe. Grid in, "Meet Orbit." / "Your friends, always within reach.", buttons.
-  7. Tap a friend (`.focus(id)`, `constellation(center:)`): they glide to the middle at Earth's
-     size (91, photo 86), Earth shrinks into the place they left (glass 32, the globe inside it
-     keeps turning), their friends (`friends(of:)`, four or five, symmetric so the one you came
-     from is always there) take the places, new ones budding out of the friend's surface (on top
-     of their photo, like droplets), the rest melting into Earth. Copy: "Zoe's orbit." / "Dubai
-     · 5 friends" / "Tap Earth to come back." Tap Earth to go back to `.bloom`. Hit-testing uses
-     the engine's snapshot turned by the spin; the smallest bubble under the finger wins.
-  8. Drag round the middle spins everyone (`SpinDial`) and turns the globe on its axis; it also
-     drifts 1.2 degrees a second. "Continue": back to Earth in the middle if a friend has it,
-     friends melt into Earth, the zoom runs backwards (3.4 s), the map tilts back up to the tower,
+  7. Tap a friend (`.focus(id)`, `focus(on:)`): the other five melt into Earth while the friend
+     glides to the middle at Earth's size (91, photo 86); 0.3 s later Earth (with them inside)
+     shrinks and flies to the top-left corner (`homeCorner`, 21pt of glass 20pt in, just under the
+     status bar, placed from the real safe area by `placeHomeCorner`); the neck to it stretches and
+     lets go. Then four moments from the friend's week bud out of them one by one
+     (`moments(of:)`, bubbles 16-39, photos `moment-<friend>-<n>`, at `momentPlaces`). Copy:
+     "Zoe's orbit." / "This week in Dubai." / "Tap Earth to come back." Tapping the corner Earth
+     plays `.bloom` (`constellation`): moments melt back into the friend, Earth flies home, the
+     friend glides back to their place, and the others bud out of Earth once it is back
+     (appearDelay 0.45+). Only friends (round Earth) and Earth (in its corner) answer taps.
+     Hit-testing uses the engine's snapshot turned by the spin; the smallest bubble wins.
+  8. Drag round the middle spins everyone but Earth (`SpinDial`) and turns the globe on its axis
+     (`globeAngle`); it also drifts 1.2 degrees a second. A tap unwinds the spin (`settle`, 0.7 s,
+     the short way; the globe keeps the whole turns), so friends melting into the moving Earth
+     meet it. "Continue": back to Earth in the middle if a friend has it (1.1 s),
+     friends melt into Earth, the zoom runs backwards (3.6 s), the map tilts back up to the tower,
      the dome rises again (the first frame, so a recording loops), then home.
 - Globe (`Orbit/Bubbles/HoloGlobe.swift`, shader `holoGlobe`): drawn per pixel, so it's sharp at
   any size. Geometry `GlobeMath` (pinhole camera, `distance` in Earth radii; 9 at rest, globe
@@ -116,16 +145,23 @@ asked for four versions in that hue, "just colors and shadow, other is good".
   the coast level and scale, so colour conversion can't move the coastline). Land with a pastel
   sheen, raised (lit shore, shadowed sea behind), a sea graded top to bottom, a rim, an aura, and
   a warm glow from below on the limb. Colours come from `GlobePalette` (29 floats through
-  `.floatArray`): Dusk (default: royal blue to violet sea, lavender land, magenta underglow),
-  Afterglow (peach and blush land), Midnight bloom (royal to plum sea), Lavender sky (bright
-  violet sea, white-pink land). In a debug build, long-press the screen (once everyone is in orbit)
-  for the next one; a capsule names it, and it's remembered (`globePalette`). Compared in a mock
-  first (`tools/preview/globe.py`, which mirrors the shader).
+  `.floatArray`): Aurora (default, matched in the mock to the user's sheet: dark teal sea, land
+  glowing aqua to lime, mint rim, green aura), then the FlightElite four: Dusk (royal blue to
+  violet sea, lavender land), Afterglow (peach and blush land), Midnight bloom (royal to plum
+  sea), Lavender sky. In a debug build, long-press the screen (once everyone is in orbit) for the
+  next one; a capsule names it, and it's remembered (`globePalette.2`, renamed when Aurora became
+  the default). While the zoom runs, the same shader draws the real Earth on the sphere
+  (`imagery.x` of it, textures `world` and `sat1`-`sat3`, only passed while it shows), lit like a
+  planet with a blue atmosphere, dissolving into the hologram. Compared in a mock first
+  (`tools/preview/globe.py`, which mirrors the shader; its `satellite` uses stand-in colours).
 - Glass (`Orbit/Bubbles/GlassNetwork.swift`): a ring for everyone visible (Earth's 91 round the 84
-  globe, friends 27 to 34, photo 5pt inside) and a neck from the biggest (the one in the middle)
-  to each other one, as real Liquid Glass in one `GlassEffectContainer` on iOS 26 (each shape in
-  a view sized to its bounds); a dark outline before. Under the glass the page is filled with the
-  canvas colour, so the grid doesn't show through. The globe follows Earth's bubble
+  globe, friends 27 to 34, moments 29 to 33, photo 5pt inside) and a neck from the biggest (the
+  one in the middle) to each other one, joined with `Path.union` into one outline and drawn as one
+  Liquid Glass shape over the whole screen on iOS 26 (the necks meet the rings along tangents, so
+  it's smooth); a dark outline before. Not one glass shape per ring and neck in a
+  `GlassEffectContainer`: each sat in a view sized to its own bounds, which clipped the blend
+  between them into straight "sharp cuts". Under the glass the page is filled with the canvas
+  colour, so the grid doesn't show through. The globe follows Earth's bubble
   (`BubbleStage`'s `centerpiece` closure gets Earth as drawn, turned by the spin;
   `WorldPhoto.globeRadius` keeps it full size while Earth's glass seeps out or drains).
   Layers: grid, zoom, gate shade, glass, photos melting away, globe, photos, copy, dome. Photos
@@ -134,7 +170,14 @@ asked for four versions in that hue, "just colors and shadow, other is good".
   bubble appears or vanishes, so only real pins have it (not buds, not friends melting away).
 - Engine additions: `popsInPlace` (pins appear on their city), `isAppearing` / `isVanishing` /
   `fullRadius` (photos pop only when appearing or leaving, not when a pin grows), an appearing
-  bubble buds out of the anchor its target names (a friend's friends out of them).
+  bubble buds out of the anchor its target names (a friend's moments out of them). `bubbleCount`
+  is 40 for the moments; `homeCorner` is a static var the screen sets.
+- Moment photos (`Orbit/Assets.xcassets/moment-<friend>-<n>`, 480px): real photographs from the
+  Freepik stock library through the Magnific MCP (`stock_search`/`stock_download`, which spend no
+  credits; never call its generation tools without asking), picked by a subagent from previews and
+  checked as circles at 64pt; credits and licences in `docs/moment-photos.json` (8 are free-licence
+  items, which need attribution unless the account is premium). Per friend: their city at dusk,
+  something to eat or drink, a place, an outing.
 - Mocked first in Python (scratch): four friends read cleaner than five in the old even layout;
   the uneven six-place layout fixed the crowding.
 
@@ -242,11 +285,12 @@ edges, but wanted an original story, which is the current one.
 - `Orbit/Bubbles/OrbitChoreography.swift`: the layouts per scene, as keyframes, in a 372 x 480
   reference space centered on the stage. Bubble 0 is Earth, 1 you, 2 the friend you bump, 3-5
   your friends, 6-8 theirs, 9 one more for the ring; v2 adds 10-15, photo-less glass droplets;
-  v3 uses Earth and 1-9 (people, cities, friendships, the six places round the middle).
+  v3 uses Earth, friends 1-6 (people, cities, the six places round Earth) and their moments
+  16-39 (four each, the four places round a friend in the middle, Earth's corner).
 - `Orbit/Bubbles/GlassLiquid.swift`: v2's `GlassLiquidLayer` (photo layer, velocities, stretch),
   `EarthLift` (the swipe), `GlassPhoto` (photos at 95% of the orb, glow colours).
 - `Orbit/Bubbles/EarthZoom.swift`: v3's city (`CityMapController`), snapshots (`ZoomImagery`),
-  `ZoomStack`, `ZoomPath`.
+  the real Earth for the globe (`GlobeImagery`), `ZoomStack`, `ZoomPath`.
 - `Orbit/Bubbles/HoloGlobe.swift`: `GlobeState`, `GlobePalette`, `HoloGlobeView` (the `holoGlobe` shader).
 - `Orbit/Bubbles/GlassNetwork.swift`: `WorldGlass`, `GlassNeck`, `WorldPhoto`, `SpinDial`.
 - `Orbit/Onboarding/WorldOnboardingView.swift`: the v3 screen, its sequence, gate (`GateDome`),
@@ -295,24 +339,24 @@ SwiftUI gotchas learned on device:
   `OnboardingStep.swift`, `WorldOnboardingView.swift` and `tools/engine/record.swift`. Pillow 12
   ignores a fill's alpha when drawing text, so `render_v3.py` draws text through a mask.
   `PREVIEW_SCALE=1` renders v3 at half resolution, about four times faster (the video is scaled
-  to 600 wide anyway). `PALETTE=afterglow` (or `midnight`, `lavender`; `dusk` by default) draws
-  v3's globe in another colourway, and `FRAMES=378,450` renders just those frames (at rest, and
+  to 600 wide anyway). `PALETTE=dusk` (or `afterglow`, `midnight`, `lavender`; `aurora` by default)
+  draws v3's globe in another colourway, and `FRAMES=378,450` renders just those frames (at rest, and
   Zoe in the middle) for comparing them.
 
 ## Open items
 
-- v3's gate, ring sweep, six friends, tap-to-focus and colourways were just built; waiting on the
-  user's Simulator recording. Never compiled here: watch `.glassEffect(.clear, in: Circle())`,
-  `onTapGesture(coordinateSpace:)`, the `#if DEBUG` long press in the modifier chain, the
-  `centerpiece` closure, the `holoGlobe` palette `.floatArray`, `Path.union`,
-  `GlassEffectContainer`, and the MapKit calls. On the recording check: does the city wait until
-  all three cameras have rendered (no grey during the rise), how the clear dome looks over the
-  city, the ring sweep, whether the necks jump when a friend and Earth swap the middle (the hub is
-  whoever is bigger at that moment), and how the four palettes compare. Reviewed line by line
-  before the recording (no build errors found; the Swift patterns were checked with a Linux
-  compiler). From the mock, Claude's pick of the palettes is Afterglow (its peach and blush land
-  on the blue sea carries the whole FlightElite gradient and sits well with the photos' skin
-  tones), Dusk second (clearest when Earth is small); the default stays Dusk until the user picks.
+- v3's new zoom (the real Earth on the sphere dissolving into the hologram), the Aurora globe,
+  the corner Earth and moments, the one-shape glass and the Wabi-style hint were just built;
+  waiting on the user's recording. Never compiled: watch the `holoGlobe` shader's new arguments
+  (five textures; does SwiftUI accept that many `.image` arguments?), `MKMapSnapshotter.Options`
+  `preferredConfiguration` with realistic elevation, `MKMapRect.world` snapshots (does the world
+  one pass the Mercator check? if not, the dissolve moves earlier, before the widest regional
+  snapshot stops covering the screen), `glassEffect` on a unioned `Path` every frame (cost), and
+  `proxy.safeAreaInsets` inside a GeometryReader that ignores the safe area (59 if it reads 0).
+  On the recording check: the handover at the tower (should be seamless now), the flat-to-sphere
+  takeover around 2.1 s into the zoom, the dissolve, Earth's flight to the corner, the moments.
+- The user's earlier recording (the one before this) confirmed: the gate dome, the city waiting
+  until rendered (no grey), six friends, tap to focus, the dot grid hidden under the glass.
 - MapKit's Apple Maps logo and Legal link show during the city but not in the snapshots.
   A shipping app must credit the imagery wherever it is shown.
 - The Recollect "burst out of the icon in 3D" idea is unused; it could become the bloom's entrance.

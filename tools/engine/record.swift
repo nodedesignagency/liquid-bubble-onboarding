@@ -10,14 +10,15 @@ switch version {
 // render.py); "Continue" at 10 s.
 case "v2": script = [(0, .gate), (2.2, .reveal), (10.0, .gate)]
 // v3, with the city rendered and the imagery in at once: the dome rises, the finger swipes it
-// away at 2.3 s, the map rises, the zoom runs 3.95-8.55 s (render_v3.py replays the gate and the
-// zoom), pins at 8.7 s, lift-off at 10.1 s; taps on Zoe (Dubai) at 13 s, Layla (Cairo) at 15.6 s
-// and Earth at 18.2 s; "Continue" at 20.6 s, back in the city by 25 s and the dome up again.
-case "v3": script = [(0, .space), (8.7, .pins), (10.1, .bloom), (13.0, .focus(6)), (15.6, .focus(8)),
-                     (18.2, .bloom), (20.6, .space)]
+// away at 2.3 s, the map rises, the zoom runs 3.95-8.95 s (render_v3.py replays the gate and the
+// zoom), pins at 9.1 s, lift-off at 10.5 s; taps on Zoe (Dubai) at 13.2 s, Earth in its corner at
+// 16 s, Kai (Istanbul) at 17.6 s and Earth at 20 s; "Continue" at 21 s, back in the city by 25.5 s
+// and the dome up again.
+case "v3": script = [(0, .space), (9.1, .pins), (10.5, .bloom), (13.2, .focus(6)), (16.0, .bloom),
+                     (17.6, .focus(4)), (20.0, .bloom), (21.0, .space)]
 default: script = [(0, .you), (3.0, .bump), (6.8, .circle), (10.6, .world), (15.0, .collapse)]
 }
-let end = version == "v1" ? 16.6 : version == "v2" ? 12.6 : 27.4, fps = 30.0
+let end = version == "v1" ? 16.6 : version == "v2" ? 12.6 : 28.0, fps = 30.0
 let engine = BubbleEngine(bubbleCount: OrbitChoreography.bubbleCount)
 var pending: [(Double, BubbleLayout)] = []
 var next = 0

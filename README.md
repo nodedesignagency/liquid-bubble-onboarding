@@ -6,17 +6,18 @@ versions; the home screen at the end lets you replay any of them.
 **v3** (the default) is one dark screen that starts in the real world:
 
 1. It opens on Paris in 3D (Apple's map, through MapKit), once it has fully loaded, with a big
-   dome of clear glass rising from the bottom edge: "Swipe up to enter".
+   dome of clear glass rising from the bottom edge, "Swipe up to enter" on the glass.
 2. Swipe it away and the city pulls back through the sky. The zoom is drawn from satellite
-   snapshots fetched while the city loaded, so it never waits on the network, and a glowing ring
-   sweeps out from the city turning the real Earth into a holographic globe: "Everyone you love,
-   in one orbit."
+   snapshots fetched while the city loaded, so it never waits on the network: the real Earth
+   pulls back into a ball, then dissolves in place into a glowing holographic globe: "Everyone you
+   love, in one orbit."
 3. Six friends pop up as pins on their cities, then lift off into orbit round Earth, each joined
    to it by a neck of liquid glass (real Liquid Glass on iOS 26), over a faint dot grid.
 4. "Meet Orbit." comes in under it, with two buttons. Drag around Earth to spin everyone, the globe
-   with them. Tap a friend and they take the middle, globe-size, with their own friends budding out
-   of them; tap Earth to come back. "Continue" melts everyone back into Earth and dives back into
-   the city, and the dome rises again, so a recording loops.
+   with them. Tap a friend and everyone else melts into Earth, which parks in the top-left corner,
+   while the friend takes the middle, globe-size, and four moments from their week (places,
+   coffee, food) bud out of them; tap Earth to come back. "Continue" melts everyone back into
+   Earth and dives back into the city, and the dome rises again, so a recording loops.
 
 **v2** is one screen in the style of the Wabi app:
 
@@ -53,17 +54,20 @@ and zoom need a network connection (MapKit downloads the imagery); it waits for 
 
 - **v3 globe** (`Bubbles/HoloGlobe.swift`, the `holoGlobe` shader in `Bubbles/Liquid.metal`): a
   sphere drawn per pixel from a signed distance field of the world's coastlines (`land-sdf`, from
-  Natural Earth, built by `tools/globe/landsdf.py`), so it is sharp at any size: pearl continents
-  with a pastel holographic sheen and a little relief, a royal-blue-to-violet sea, a glowing rim
-  and aura. Four colourways in the hues of the FlightElite onboarding (`GlobePalette`: Dusk,
+  Natural Earth, built by `tools/globe/landsdf.py`), so it is sharp at any size: continents
+  glowing from aqua to lime with a little relief, a dark teal sea, a mint rim and a green aura
+  (Aurora). Four more colourways in the hues of the FlightElite onboarding (`GlobePalette`: Dusk,
   Afterglow, Midnight bloom, Lavender sky); in a debug build, long-press the screen to try the next.
+  During the zoom the same shader draws the satellite snapshots on the sphere (Web Mercator mapped
+  per pixel), so the real Earth turns into the hologram coast on coast.
 - **v3 zoom** (`Bubbles/EarthZoom.swift`): the live map only for the city; the zoom out runs through
-  satellite snapshots at widening spans (fetched while the city loads), crossfaded by scale and
-  eased in log space, then a ring sweeps the globe out over them, so nothing loads mid-zoom.
-- **v3 glass** (`Bubbles/GlassNetwork.swift`): Earth and each friend sit in a ring of Liquid Glass,
-  joined to whoever is in the middle by metaball necks, all in one `GlassEffectContainer` so they
-  render as one body. The page under the glass is filled plain, so the dot grid doesn't show
-  through it.
+  satellite snapshots at widening spans and one of the whole world (fetched while the city loads),
+  crossfaded by scale and eased in log space, flat at first and then on the globe, so nothing
+  loads mid-zoom. The first snapshot is drawn in 3D like the live map, so the handover is seamless.
+- **v3 glass** (`Bubbles/GlassNetwork.swift`): Earth and each friend (or moment) sit in a ring of
+  Liquid Glass, joined to whoever is in the middle by metaball necks, all unioned into one outline
+  and drawn as one shape of glass, so there are no seams. The page under the glass is filled
+  plain, so the dot grid doesn't show through it.
 - **v2 glass** (`Bubbles/GlassLiquid.swift`, the `glassLiquid` shader in `Bubbles/Liquid.metal`):
   the photos and the headline are drawn flat into one layer, and the shader turns it into glass.
   The orbs are joined with a smooth union, so close ones melt into one shape with a neck of clear
@@ -102,8 +106,8 @@ spin. Each bud plays a soft haptic as it lets go of its parent.
 - **Copy**: `Onboarding/OnboardingStep.swift` (title, subtitle and scene per page).
 - **Colors**: `Theme/Theme.swift` (the liquid's lilac, butter and sky washes; mirror them in `GooTint`).
 - **Photos**: replace `friend-1` (you) … `friend-9` in `Assets.xcassets`. A missing photo falls back
-  to initials. v3 uses all nine: your six friends (`OrbitChoreography.homeCircle`), pinned on the
-  cities in `OrbitChoreography.people`, and who knows whom in `OrbitChoreography.friends(of:)`.
+  to initials. v3 uses six: your friends (`OrbitChoreography.homeCircle`), pinned on the cities
+  in `OrbitChoreography.people`. Their moments are `moment-<friend>-<n>` (four each).
 - **v3's city**: `EarthZoom.city` and its cameras (other good Flyover cities are listed there).
 
 ## Checking changes without Xcode
@@ -117,4 +121,5 @@ those parts are labelled stand-ins.
 
 - Earth (v1, v2): NASA Goddard Space Flight Center, "Blue Marble" (public domain). v3's city and
   zoom imagery: Apple Maps, via MapKit. v3's coastlines: Natural Earth (public domain).
-- Photos: [Unsplash](https://unsplash.com/license), free to use under the Unsplash License.
+- Photos: [Unsplash](https://unsplash.com/license), free to use under the Unsplash License. v3's
+  moments: Freepik stock (via Magnific), credits and licences in `docs/moment-photos.json`.
