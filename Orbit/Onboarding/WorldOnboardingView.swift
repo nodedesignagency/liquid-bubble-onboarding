@@ -1,8 +1,8 @@
 import SwiftUI
 import MapKit
 
-/// v3: one dark screen. It opens on a real city in 3D (Apple's map), shown only once every view
-/// the opening passes through has rendered, with a big dome of clear glass rising from the bottom
+/// v3: one dark screen. It opens on a real city in 3D (Apple's map, as snapshots MapKit hands over
+/// only once every tile is in, so it never shows its grey loading grid), with a big dome of clear glass rising from the bottom
 /// edge, "Swipe up to enter" on it like Wabi's. Swipe it up and it sweeps off over the city, the
 /// map flattens, rises and pulls all the way back (from satellite snapshots fetched while it
 /// loaded, so it never waits on the network); the photo turns in place into a glowing map, which
@@ -52,7 +52,10 @@ struct WorldOnboardingView: View {
     @State private var phase = Phase.loading
     /// Made when the onboarding starts (never on the home screen): an `MKMapView` is heavy, and
     /// a property's initial value is built every time the view is.
-    @State private var city: CityMapController?
+    @Environment(\.displayScale) private var displayScale
+    /// When the city starts tilting down to the zoom, and back up after it.
+    @State private var riseStart: Double?
+    @State private var riseBackStart: Double?
     @State private var imagery = ZoomImagery()
     @State private var stageSize = CGSize.zero
     /// The dark cover over the city until it has rendered, and a spinner if that takes a while.
@@ -123,7 +126,6 @@ struct WorldOnboardingView: View {
                         zoomLayer(size: size)
                         gateShadeLayer(size: size)
                     }
-                    // Over the zoom: the city stays drawn, covered, under it.
                     DotGrid(focus: orbCenter)
                         .opacity(gridOpacity)
                     BubbleStage(scene: stageScene, look: .v3, spin: spin,
@@ -208,11 +210,9 @@ struct WorldOnboardingView: View {
             let u = progress(at: t)
             let stack = stackOpacity(at: t, u: u)
             ZStack {
-                if let city {
-                    // Hidden under a cover, never made transparent, so MapKit keeps loading and
-                    // drawing it while the globe has the screen (the way back needs it).
-                    CityMapView(controller: city)
-                        .overlay { Theme.worldCanvas.opacity(showsCity(u: u, stack: stack) ? cityCover : 1) }
+                if showsCity(u: u, stack: stack) {
+                    cityView(at: t, size: size)
+                        .overlay { Theme.worldCanvas.opacity(cityCover) }
                 }
                 if let path, let u, stack > 0 {
                     ZoomStack(levels: imagery.levels, metersPerPoint: path.scale(at: u), roll: path.roll(at: u),
@@ -252,6 +252,52 @@ struct WorldOnboardingView: View {
             return ZoomPath.ease(left / 0.6)
         }
         return ZoomPath.ease((t - start) / 0.6)
+    }
+
+    /// The city at `t`: its frame along the rise, crossfading into the next.
+    @ViewBuilder
+    private func cityView(at t: Double, size: CGSize) -> some View {
+        let frames = imagery.cityFrames
+        let x = cityPosition(at: t)
+        let lower = min(max(Int(x.rounded(.down)), 0), max(frames.count - 1, 0))
+        let upper = min(lower + 1, max(frames.count - 1, 0))
+        let blend = x - Double(lower)
+        ZStack {
+            if let image = Self.frame(near: lower, in: frames) {
+                Image(uiImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: size.width, height: size.height)
+            }
+            if upper != lower, blend > 0.001, let image = frames[upper] {
+                Image(uiImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: size.width, height: size.height)
+                    .opacity(blend)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+    }
+
+    /// The frame at `index`, or the nearest one that came.
+    private static func frame(near index: Int, in frames: [UIImage?]) -> UIImage? {
+        guard !frames.isEmpty else { return nil }
+        for offset in 0..<frames.count {
+            for i in [index - offset, index + offset] where frames.indices.contains(i) {
+                if let image = frames[i] { return image }
+            }
+        }
+        return nil
+    }
+
+    /// Where along the rise the city is at `t`, in frames: 0 (the tower) until the swipe, tilting
+    /// down to the last (straight down) over `EarthZoom.rise`, and back up after the zoom back.
+    private func cityPosition(at t: Double) -> Double {
+        let last = Double(max(imagery.cityFrames.count - 1, 0))
+        if let back = riseBackStart { return last * (1 - ZoomPath.ease((t - back) / EarthZoom.rise)) }
+        if let start = riseStart { return last * ZoomPath.ease((t - start) / EarthZoom.rise) }
+        return 0
     }
 
     private func showsCity(u: Double?, stack: Double) -> Bool {
@@ -552,26 +598,20 @@ struct WorldOnboardingView: View {
         }
     }
 
-    /// The city, loaded and drawn behind its cover at every view the opening passes through (MapKit
-    /// loads as it goes, and on an iPhone the city and the rise showed its grey loading grid where
-    /// it hadn't), and the zoom's imagery fetched meanwhile; then the dome rises and waits for the
-    /// swipe.
+    /// The city's frames and the zoom's snapshots, fetched behind the cover (MapKit hands each over
+    /// only once every tile is in); then the dome rises and waits for the swipe.
     private func playIntro() async {
         let size = stageSize
         let diagonal = hypot(size.width, size.height)
-        let city = CityMapController()
-        self.city = city
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.2))
             if phase == .loading { withAnimation(.easeIn(duration: 0.4)) { showLoader = true } }
         }
-        // It starts at the handover camera, looking straight down: the zoom's imagery can be
-        // fetched as soon as the map knows its scale.
-        _ = await waitUntil(5, { city.handoffEstimate != nil })
-        imagery.fetch(handoff: city.handoffEstimate ?? 3.5, diagonal: diagonal)
-        // From the handover back to the tower, ending on the tower for the gate.
-        guard await loadRise(city, from: 1, to: 0, within: 30) else { return }
-        guard await waitUntil(10, { imagery.isComplete }) else { return }
+        imagery.fetchCity(size: size, scale: displayScale)
+        // The zoom's snapshots start from the scale straight down, measured on the city's last frame.
+        _ = await waitUntil(12, { imagery.handoffScale != nil || imagery.cityIsComplete })
+        imagery.fetch(handoff: imagery.handoffScale ?? 3.5, diagonal: diagonal)
+        guard await waitUntil(20, { imagery.cityIsComplete && imagery.isComplete }) else { return }
 
         phase = .gate
         withAnimation(.easeOut(duration: 0.8)) {
@@ -603,13 +643,12 @@ struct WorldOnboardingView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
         sequence?.cancel()
+        riseStart = now + 0.3
         sequence = Task { @MainActor in
-            guard await pause(0.3), let city else { return }
-            city.rise()
-            guard await pause(EarthZoom.rise + 0.05) else { return }
+            guard await pause(0.3 + EarthZoom.rise + 0.05) else { return }
             domeVisible = false
             let size = stageSize
-            let handoff = city.metersPerPoint() ?? city.handoffEstimate ?? 3.5
+            let handoff = imagery.handoffScale ?? 3.5
             path = ZoomPath(startScale: handoff, levels: imagery.levels, rest: restGlobe(size: size), size: size)
             zoomStart = now
             guard await pause(EarthZoom.zoomOut * 0.8) else { return }
@@ -662,15 +701,7 @@ struct WorldOnboardingView: View {
                 guard await pause(1.1) else { return }
             }
             stageScene = .space
-            // While everyone melts into Earth, MapKit loads the way back again behind the globe
-            // (it may have dropped the city while the globe had the screen): every view of the
-            // rise from the tower to straight down, ending straight down, where the zoom back
-            // lands. At least the second the melt takes, longer only while the map still loads.
-            let meltEnds = now + 1.0
-            if let city, path != nil, !reduceMotion {
-                guard await loadRise(city, from: 0, to: 1, within: 9) else { return }
-            }
-            guard await pause(max(0, meltEnds - now)) else { return }
+            guard await pause(1.0) else { return }
             guard let current = path, !reduceMotion else {
                 onFinish()
                 return
@@ -681,33 +712,13 @@ struct WorldOnboardingView: View {
             path = ZoomPath(startScale: current.startScale, levels: imagery.levels, rest: rest, size: stageSize)
             backStart = now
             guard await pause(EarthZoom.zoomBack) else { return }
-            city?.settle()
+            riseBackStart = now
             withAnimation(.easeInOut(duration: EarthZoom.rise)) { gateShade = 1 }
             guard await pause(EarthZoom.rise * 0.6) else { return }
             showDome(after: 0)
             guard await pause(1.4) else { return }
             onFinish()
         }
-    }
-
-    /// Loads and draws every view of the rise between `from` and `to` (0 the tower, 1 straight
-    /// down), ending on `to`, twice: the second pass finds them still in MapKit's cache (else loads
-    /// them again), so the camera moving through them later shows only loaded ground. At most
-    /// `limit` seconds in all; false only if cancelled.
-    private func loadRise(_ city: CityMapController, from: Double, to: Double, within limit: Double) async -> Bool {
-        let deadline = now + limit
-        let steps: [Double] = from > to ? Array(EarthZoom.riseSteps.reversed()) : EarthZoom.riseSteps
-        for pass in 0..<2 {
-            for t in steps {
-                let left = deadline - now
-                guard left > 0 else { break }
-                _ = await city.load(EarthZoom.riseCamera(t), within: min(left, pass == 0 ? 12 : 6))
-                if Task.isCancelled { return false }
-            }
-        }
-        // Wherever the time ran out, end on the view asked for.
-        if deadline - now <= 0 { city.jump(to: EarthZoom.riseCamera(to)) }
-        return !Task.isCancelled
     }
 
     /// Waits, and says whether to carry on (false once the sequence was cancelled).

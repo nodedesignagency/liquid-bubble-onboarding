@@ -102,30 +102,29 @@ sized like their reference with the mark pinned left and the words centred.
 Then on a real iPhone ("all is working great", in the Simulator too) the city showed MapKit's grey
 loading grid in places: at the tower on the gate, in the rise, and straight down at the handover.
 The opening counted a view as loaded if MapKit hadn't started drawing within 0.8 s and gave up
-after 3-5 s; a phone's network is slower than the Mac's. Fixed in `CityMapController.load` and
-`loadRise` (step 1), and the way back is loaded again behind the globe (step 8).
+after 3-5 s; a phone's network is slower than the Mac's. A stricter wait (every view drawn with
+every tile, loaded twice) still showed the grey grid on the phone, and in the Simulator it now
+waited so long the user thought it was broken ("fix it man, I am getting late"). So the live map
+is gone: the city is snapshots too (`ZoomImagery.cityFrames`), which MapKit hands over only once
+every tile is in (step 1).
 
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
   `BubbleEngine` (settled on its first scene in `init`, passed to `BubbleStage(engine:)`, never
   with `startsSettled`, which would reset a shared engine on every redraw) so taps can hit-test it.
   Phases: loading, gate, zooming, ready, leaving. Everything after the swipe is a function of time:
-  1. Loading: a live `MKMapView` (`CityMapController`, realistic elevation) under a dark cover
-     (a spinner after 1.2 s). It starts at the handover camera (straight down, 2.6 km) and jumps to
-     every view of the rise (`riseCamera(t)`, `riseSteps` 1, 2/3, 1/3, 0) to the start camera (the
-     Eiffel Tower, 1.5 km, pitch 62, heading 330), twice (`loadRise`; the second pass finds them
-     still cached, else loads them again), at most 30 s, so the rise shows only loaded ground.
-     Each view (`CityMapController.load`) waits until MapKit has drawn it with every tile, nothing
-     is downloading and it has been quiet 0.3 s (1.5 s if its "finished loading" never comes), or
-     it never had anything to do for 1.5 s; a failed or stalled load is asked again, at most every
-     2 s. Simulated against scripted MapKit callbacks (scratch): fast 1.2 s, slow tiles wait,
-     offline gives up at the limit. As
-     soon as the map has a size, `ZoomImagery` fetches satellite snapshots of the same spot
-     (`MKMapSnapshotter`), each 3.2x wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt
-     at 2x; under 20 km drawn with realistic elevation like the live map, so the handover doesn't
-     jump; a snapshot that fails is asked for again flat). Each is measured on itself (points per
-     radian of longitude at the city, which is Web Mercator's scale both ways); the gate waits
-     for them (at most 10 s more).
+  1. Loading: a dark cover (a spinner after 1.2 s) while MapKit renders everything the opening
+     shows as snapshots, which it hands over only once every tile is in (the live `MKMapView` used
+     before showed its grey loading grid on an iPhone however long the app waited):
+     `ZoomImagery.fetchCity` takes the city in 3D (realistic elevation) at `cityFrameCount` (8)
+     views along the rise (`riseCamera(t)`: the Eiffel Tower, 1.5 km, pitch 62, heading 330, to
+     straight down from 2.6 km), full screen (the tower at the screen's scale, the rest at up to 2x;
+     a 3D frame that fails is asked for flat); the scale straight down is measured on the last
+     frame (`handoffScale`). Then `fetch` takes satellite snapshots of the same spot, each 3.2x
+     wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt at 2x; under 20 km in 3D like the
+     city frames, so the handover doesn't jump; a failed one is asked for again flat). Each is
+     measured on itself (points per radian of longitude at the city, Web Mercator's scale both
+     ways). The gate waits for all of them (at most about 30 s).
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
      iOS 26) rises from below (`SpringCurve.domeIn`), lit inside like Wabi's dome in Aurora's
@@ -136,7 +135,8 @@ after 3-5 s; a phone's network is slower than the Mac's. Fixed in `CityMapContro
      user's pick) that lifts 4pt every 2.4 s, over "Swipe up to enter". Dragging lifts it with resistance (`EarthLift`, as v2); letting go above 90pt,
      a flick, or a tap on it enters, else it springs back. Entering, it sweeps up off the screen
      (`domeOut`) over the city.
-  3. Rise (0.3 s later, 1.3 s, UIKit camera animation): pitch to 0, distance 2.6 km.
+  3. Rise (0.3 s later, 1.3 s): the city crossfades through its frames from the tower to looking
+     straight down (`cityPosition`, eased); after the zoom back it runs back up the same way.
   4. Zoom out (5 s, `ZoomPath`): scale eased in log space, slowest while the photo turns into
      the hologram and curls (a dip placed by bisection). `ZoomStack` fades in over the map (0.6 s)
      and crossfades the snapshots by scale (a finer one fades out between covering the screen and
@@ -180,10 +180,7 @@ after 3-5 s; a phone's network is slower than the Mac's. Fixed in `CityMapContro
      (`globeAngle`); it also drifts 1.2 degrees a second. A tap unwinds the spin (`settle`, 0.7 s,
      the short way; the globe keeps the whole turns), so friends melting into the moving Earth
      meet it. "Continue": back to Earth in the middle if a friend has it (1.1 s),
-     friends melt into Earth while MapKit loads the way back again behind the globe (`loadRise`
-     from the tower to straight down, at least 1 s, at most 9; the city is hidden under an opaque
-     cover, never made transparent, so MapKit keeps drawing it, and the dot grid sits over the
-     zoom layer), the zoom runs backwards (3.6 s), the map tilts back up to the tower,
+     friends melt into Earth, the zoom runs backwards (3.6 s), the city tilts back up to the tower,
      the dome rises again (the first frame, so a recording loops), then home.
 - Globe (`Orbit/Bubbles/HoloGlobe.swift`, shader `holoGlobe`): drawn per pixel, so it's sharp at
   any size. Geometry `GlobeMath` (pinhole camera, `distance` in Earth radii; 9 at rest, globe
@@ -345,8 +342,8 @@ edges, but wanted an original story, which is the current one.
   16-39 (four each, the four places round a friend in the middle, Earth's corner).
 - `Orbit/Bubbles/GlassLiquid.swift`: v2's `GlassLiquidLayer` (photo layer, velocities, stretch),
   `EarthLift` (the swipe), `GlassPhoto` (photos at 95% of the orb, glow colours).
-- `Orbit/Bubbles/EarthZoom.swift`: v3's city (`CityMapController`), snapshots (`ZoomImagery`),
-  `ZoomStack`, `ZoomPath`.
+- `Orbit/Bubbles/EarthZoom.swift`: v3's cameras (`EarthZoom`), the city's frames and the zoom's
+  snapshots (`ZoomImagery`), `ZoomStack`, `ZoomPath`.
 - `Orbit/Bubbles/HoloGlobe.swift`: `GlobeState`, `GlobePalette`, `HoloGlobeView` (the `holoGlobe` shader).
 - `Orbit/Bubbles/GlassNetwork.swift`: `WorldGlass`, `GlassNeck`, `WorldPhoto`, `SpinDial`.
 - `Orbit/Onboarding/WorldOnboardingView.swift`: the v3 screen, its sequence, gate (`GateDome`),
@@ -407,8 +404,8 @@ SwiftUI gotchas learned on device:
   position and buttons, the portraits, and the 3D first snapshots at the tower's handover.
 - The user's earlier recording (the one before this) confirmed: the gate dome, the city waiting
   until rendered (no grey), six friends, tap to focus, the dot grid hidden under the glass.
-- MapKit's Apple Maps logo and Legal link show during the city but not in the snapshots.
-  A shipping app must credit the imagery wherever it is shown.
+- MapKit's snapshots carry no Apple Maps logo or Legal link (the live map did). A shipping app
+  must credit the imagery wherever it is shown.
 - The Recollect "burst out of the icon in 3D" idea is unused; it could become the bloom's entrance.
 - v2's `glassLiquid` shader and `.glassEffect` buttons were confirmed working in the user's
   recording.
