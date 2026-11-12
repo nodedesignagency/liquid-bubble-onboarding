@@ -109,26 +109,31 @@ loading grid in places: at the tower on the gate, in the rise, and straight down
 The opening counted a view as loaded if MapKit hadn't started drawing within 0.8 s and gave up
 after 3-5 s; a phone's network is slower than the Mac's. A stricter wait (every view drawn with
 every tile, loaded twice) still showed the grey grid on the phone, and in the Simulator it now
-waited so long the user thought it was broken ("fix it man, I am getting late"). So the live map
-is gone: the city is snapshots too (`ZoomImagery.cityFrames`), which MapKit hands over only once
-every tile is in (step 1).
+waited so long the user thought it was broken ("fix it man, I am getting late"): in 3D MapKit
+hardly ever reports a full render, so that wait ran into every time limit. Replacing the city with
+snapshots (eight frames crossfaded, then two in one pull-back) looked laggy, then wrong: the user
+wants the original live 3D tilt, with only the loading fixed. So the live map is back (step 1):
+the zoom's snapshots load first and the map afterwards with the network to itself (the two at once
+starved it on the phone), and a view counts as loaded when MapKit says it finished loading and
+goes quiet, not on a full render.
 
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
   `BubbleEngine` (settled on its first scene in `init`, passed to `BubbleStage(engine:)`, never
   with `startsSettled`, which would reset a shared engine on every redraw) so taps can hit-test it.
   Phases: loading, gate, zooming, ready, leaving. Everything after the swipe is a function of time:
-  1. Loading: a dark cover (a spinner after 1.2 s) while MapKit renders everything the opening
-     shows as snapshots, which it hands over only once every tile is in (the live `MKMapView` used
-     before showed its grey loading grid on an iPhone however long the app waited):
-     `ZoomImagery.fetchCity` takes the city in 3D (realistic elevation) at two views
-     (`cityFrameCount`, `riseCamera(t)`: the Eiffel Tower, 1.5 km, pitch 62, heading 330, and
-     straight down from 2.6 km), full screen at the screen's scale (a 3D frame that fails is asked
-     for flat); the scale straight down is measured on the last frame (`handoffScale`). Then `fetch` takes satellite snapshots of the same spot, each 3.2x
-     wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt at 2x; under 20 km in 3D like the
-     city frames, so the handover doesn't jump; a failed one is asked for again flat). Each is
-     measured on itself (points per radian of longitude at the city, Web Mercator's scale both
-     ways). The gate waits for all of them (at most about 30 s).
+  1. Loading: a live `MKMapView` (`CityMapController`, realistic elevation) under a dark cover (a
+     spinner after 1.2 s), starting at the handover camera (straight down, 2.6 km), which gives the
+     map's scale. First `ZoomImagery` fetches satellite snapshots of the same spot (`MKMapSnapshotter`),
+     each 3.2x wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt at 2x; under 20 km in 3D
+     like the live map, so the handover doesn't jump; a failed one is asked for again flat), each
+     measured on itself (points per radian of longitude at the city), at most 12 s. Then, with the
+     network to itself, the map loads every view of the rise (`riseCamera(t)`, `riseSteps`), from
+     straight down to the start camera (the Eiffel Tower, 1.5 km, pitch 62, heading 330), twice
+     (`loadRise`: a view at most 6 s, then 3 s; 25 s in all). A view is loaded
+     (`CityMapController.isReady`) when MapKit has finished loading and been quiet 0.4 s, or had
+     nothing to do for 1.5 s; a failed load is asked again at most every 2 s. Not on a full render:
+     in 3D MapKit hardly ever reports one. Simulated against scripted MapKit callbacks (scratch).
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
      iOS 26) rises from below (`SpringCurve.domeIn`), lit inside like Wabi's dome in Aurora's
@@ -139,11 +144,7 @@ every tile is in (step 1).
      user's pick) that lifts 4pt every 2.4 s, over "Swipe up to enter". Dragging lifts it with resistance (`EarthLift`, as v2); letting go above 90pt,
      a flick, or a tap on it enters, else it springs back. Entering, it sweeps up off the screen
      (`domeOut`) over the city.
-  3. Rise (0.3 s later, 1.3 s, `cityPosition` eased): one continuous move, the tower view easing
-     from 1.15x to 1x and fading out over the view straight down, which comes in from 1.25x to 1x
-     (both always cover the screen); after the zoom back it runs back the same way. (Eight frames
-     along the tilt crossfaded in turn looked laggy on an iPhone; the live map's real tilt showed
-     its grey loading grid there.)
+  3. Rise (0.3 s later, 1.3 s, UIKit camera animation of the live map): pitch to 0, distance 2.6 km.
   4. Zoom out (5 s, `ZoomPath`): scale eased in log space, slowest while the photo turns into
      the hologram and curls (a dip placed by bisection). `ZoomStack` fades in over the map (0.6 s)
      and crossfades the snapshots by scale (a finer one fades out between covering the screen and
@@ -187,7 +188,10 @@ every tile is in (step 1).
      (`globeAngle`); it also drifts 1.2 degrees a second. A tap unwinds the spin (`settle`, 0.7 s,
      the short way; the globe keeps the whole turns), so friends melting into the moving Earth
      meet it. "Continue": back to Earth in the middle if a friend has it (1.1 s),
-     friends melt into Earth, the zoom runs backwards (3.6 s), the city tilts back up to the tower,
+     friends melt into Earth while the map loads the way back again behind the globe (`loadRise`
+     toward straight down, at least 1 s, at most 8; the city is hidden under an opaque cover,
+     never made transparent, so MapKit keeps it, and the dot grid sits over the zoom layer), the
+     zoom runs backwards (3.6 s), the map tilts back up to the tower (`settle`),
      the dome rises again (the first frame, so a recording loops), then home.
 - Globe (`Orbit/Bubbles/HoloGlobe.swift`, shader `holoGlobe`): drawn per pixel, so it's sharp at
   any size. Geometry `GlobeMath` (pinhole camera, `distance` in Earth radii; 9 at rest, globe
@@ -349,8 +353,8 @@ edges, but wanted an original story, which is the current one.
   16-39 (four each, the four places round a friend in the middle, Earth's corner).
 - `Orbit/Bubbles/GlassLiquid.swift`: v2's `GlassLiquidLayer` (photo layer, velocities, stretch),
   `EarthLift` (the swipe), `GlassPhoto` (photos at 95% of the orb, glow colours).
-- `Orbit/Bubbles/EarthZoom.swift`: v3's cameras (`EarthZoom`), the city's frames and the zoom's
-  snapshots (`ZoomImagery`), `ZoomStack`, `ZoomPath`.
+- `Orbit/Bubbles/EarthZoom.swift`: v3's cameras (`EarthZoom`), the live city (`CityMapController`),
+  the zoom's snapshots (`ZoomImagery`), `ZoomStack`, `ZoomPath`.
 - `Orbit/Bubbles/HoloGlobe.swift`: `GlobeState`, `GlobePalette`, `HoloGlobeView` (the `holoGlobe` shader).
 - `Orbit/Bubbles/GlassNetwork.swift`: `WorldGlass`, `GlassNeck`, `WorldPhoto`, `SpinDial`.
 - `Orbit/Onboarding/WorldOnboardingView.swift`: the v3 screen, its sequence, gate (`GateDome`),
@@ -411,8 +415,8 @@ SwiftUI gotchas learned on device:
   position and buttons, the portraits, and the 3D first snapshots at the tower's handover.
 - The user's earlier recording (the one before this) confirmed: the gate dome, the city waiting
   until rendered (no grey), six friends, tap to focus, the dot grid hidden under the glass.
-- MapKit's snapshots carry no Apple Maps logo or Legal link (the live map did). A shipping app
-  must credit the imagery wherever it is shown.
+- MapKit's Apple Maps logo and Legal link show on the live city but not in the snapshots. A
+  shipping app must credit the imagery wherever it is shown.
 - The Recollect "burst out of the icon in 3D" idea is unused; it could become the bloom's entrance.
 - v2's `glassLiquid` shader and `.glassEffect` buttons were confirmed working in the user's
   recording.

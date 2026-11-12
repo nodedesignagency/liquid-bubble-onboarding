@@ -6,15 +6,14 @@ import MapKit
 /// level outran them (the user's recording was grey for three seconds), so the zoom is drawn here
 /// instead, from imagery fetched before it starts:
 ///
-/// 1. The city: 3D Paris as two snapshots (`ZoomImagery.cityFrames`), the tower and straight down.
-///    A snapshot is only handed over once MapKit has loaded every tile; the live map showed its
-///    grey loading grid on an iPhone however long the app waited for it.
-/// 2. Meanwhile, satellite snapshots of the same spot at widening spans are fetched, each about
-///    3x wider than the last, up to a few thousand kilometres. The first ones are drawn in 3D like
-///    the city, so the handover is seamless.
-/// 3. The tower view pulls back into the view straight down (one continuous move: eight stills
-///    crossfaded in turn looked laggy on an iPhone), then hands over to the snapshots, which zoom
-///    out smoothly (`ZoomStack`). The hologram fades in over
+/// 1. The city: a live `MKMapView` (3D Paris), shown only once MapKit has loaded every view the
+///    rise passes through.
+/// 2. First, satellite snapshots of the same spot at widening spans are fetched (`ZoomImagery`),
+///    each about 3x wider than the last, up to a few thousand kilometres; the first ones in 3D
+///    like the live map, so the handover is seamless. Only then does the live map load its views:
+///    on an iPhone the two together starved the map, which showed its grey loading grid.
+/// 3. The map flattens to looking straight down and rises a little (still MapKit), then hands
+///    over to the snapshots, which zoom out smoothly (`ZoomStack`). The hologram fades in over
 ///    them as a flat map with the same projection, scale and turn (`GlobeState.flatness`), so
 ///    the photo turns into it coast on coast; pulling back further, it curls into the globe
 ///    (`HoloGlobeView`), which drifts to its place on the page.
@@ -44,8 +43,8 @@ enum EarthZoom {
                     pitch: startPitch * CGFloat(1 - t), heading: heading)
     }
 
-    /// The city's snapshots along the rise: the tower, and straight down.
-    static let cityFrameCount = 2
+    /// The views the rise passes through, from the tower (0) to straight down (1).
+    static let riseSteps: [Double] = [0, 1.0 / 3, 2.0 / 3, 1]
 
     /// Seconds: the city flattening and rising, the zoom out to the globe, and the zoom back in.
     static let rise: Double = 1.3
@@ -73,11 +72,152 @@ enum EarthZoom {
     }
 }
 
+// MARK: - The city
+
+/// Owns the live map, says when the view it was last given has loaded, measures its scale, and
+/// moves its camera with UIKit animations (the rise and the tilt back up).
+///
+/// Loaded means MapKit downloaded what the view needs ("finished loading") and has gone quiet,
+/// not that it reported a full render: in 3D (realistic elevation) it hardly ever does, so a wait
+/// on that ran into every time limit. On an iPhone the old wait (move on if MapKit hadn't started
+/// drawing within 0.8 s, give up after a few seconds) showed its grey loading grid.
+final class CityMapController: NSObject, MKMapViewDelegate {
+    let mapView = MKMapView(frame: .zero)
+    /// Since the last jump: MapKit is downloading, has downloaded, has drawn, or failed.
+    private var loading = false
+    private var startedLoading = false
+    private var startedRendering = false
+    private var failed = false
+    private var jumpedAt = Date.timeIntervalSinceReferenceDate
+    /// When MapKit last said anything, to wait for it to go quiet.
+    private var lastActivity = Date.timeIntervalSinceReferenceDate
+    /// Metres per screen point at the handover camera, measured as soon as the map has a size
+    /// (across the middle, pitch doesn't change the horizontal scale).
+    private(set) var handoffEstimate: Double?
+
+    override init() {
+        super.init()
+        mapView.delegate = self
+        mapView.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .realistic)
+        mapView.isUserInteractionEnabled = false
+        mapView.showsCompass = false
+        mapView.showsScale = false
+        mapView.pointOfInterestFilter = .excludingAll
+        mapView.camera = EarthZoom.handoffCamera
+    }
+
+    /// Shows `camera` at once.
+    func jump(to camera: MKMapCamera) {
+        loading = false
+        startedLoading = false
+        startedRendering = false
+        failed = false
+        jumpedAt = Date.timeIntervalSinceReferenceDate
+        lastActivity = jumpedAt
+        mapView.camera = camera
+    }
+
+    /// The view last jumped to has loaded: MapKit finished downloading for it and has been quiet a
+    /// moment, or it never needed anything.
+    var isReady: Bool {
+        let now = Date.timeIntervalSinceReferenceDate
+        guard now - jumpedAt > 0.4, !loading, !failed else { return false }
+        if startedLoading || startedRendering { return now - lastActivity > 0.4 }
+        return now - jumpedAt > 1.5
+    }
+
+    /// Jumps to `camera` and waits until it has loaded, for at most `limit` seconds, asking again
+    /// (at most every 2 s) if a download failed. True if it loaded.
+    @MainActor
+    func load(_ camera: MKMapCamera, within limit: Double) async -> Bool {
+        let deadline = Date.timeIntervalSinceReferenceDate + limit
+        jump(to: camera)
+        var tries = 0
+        while Date.timeIntervalSinceReferenceDate < deadline {
+            if isReady { return true }
+            if failed, Date.timeIntervalSinceReferenceDate - jumpedAt > 2 {
+                // A hair further away, so MapKit treats it as a new view and asks again.
+                tries += 1
+                jump(to: MKMapCamera(lookingAtCenter: camera.centerCoordinate,
+                                     fromDistance: camera.centerCoordinateDistance * (1 + 0.0004 * Double(tries)),
+                                     pitch: camera.pitch, heading: camera.heading))
+            }
+            try? await Task.sleep(for: .milliseconds(60))
+            if Task.isCancelled { return false }
+        }
+        return isReady
+    }
+
+    func mapViewWillStartLoadingMap(_ mapView: MKMapView) {
+        loading = true
+        startedLoading = true
+        lastActivity = Date.timeIntervalSinceReferenceDate
+    }
+
+    func mapViewDidFinishLoadingMap(_ mapView: MKMapView) {
+        loading = false
+        lastActivity = Date.timeIntervalSinceReferenceDate
+    }
+
+    func mapViewDidFailLoadingMap(_ mapView: MKMapView, withError error: Error) {
+        loading = false
+        failed = true
+        lastActivity = Date.timeIntervalSinceReferenceDate
+    }
+
+    func mapViewWillStartRenderingMap(_ mapView: MKMapView) {
+        startedRendering = true
+        lastActivity = Date.timeIntervalSinceReferenceDate
+        estimateIfNeeded()
+    }
+
+    func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
+        lastActivity = Date.timeIntervalSinceReferenceDate
+        estimateIfNeeded()
+    }
+
+    private func estimateIfNeeded() {
+        guard handoffEstimate == nil, let measured = metersPerPoint() else { return }
+        handoffEstimate = measured * EarthZoom.handoffDistance / mapView.camera.centerCoordinateDistance
+    }
+
+    /// Metres per screen point across the middle of the map, along the screen's horizontal.
+    func metersPerPoint() -> Double? {
+        guard mapView.bounds.width > 0 else { return nil }
+        let center = mapView.convert(EarthZoom.city, toPointTo: mapView)
+        let probe = EarthZoom.destination(from: EarthZoom.city, bearing: mapView.camera.heading + 90, meters: 200)
+        let point = mapView.convert(probe, toPointTo: mapView)
+        let distance = Double(hypot(point.x - center.x, point.y - center.y))
+        guard distance.isFinite, distance > 1 else { return nil }
+        return 200 / distance
+    }
+
+    /// Flatten to looking straight down and rise to the handover camera.
+    func rise() {
+        UIView.animate(withDuration: EarthZoom.rise, delay: 0, options: [.curveEaseInOut]) {
+            self.mapView.camera = EarthZoom.handoffCamera
+        }
+    }
+
+    /// Back down to the start camera, tilting up to the tower.
+    func settle() {
+        UIView.animate(withDuration: EarthZoom.rise, delay: 0, options: [.curveEaseInOut]) {
+            self.mapView.camera = EarthZoom.startCamera
+        }
+    }
+}
+
+struct CityMapView: UIViewRepresentable {
+    let controller: CityMapController
+
+    func makeUIView(context: Context) -> MKMapView { controller.mapView }
+    func updateUIView(_ uiView: MKMapView, context: Context) {}
+}
+
 // MARK: - The zoom's imagery
 
-/// The city along the rise, and satellite snapshots of it at widening spans, all fetched behind
-/// the loading cover. Everything shown before the globe is one of these: MapKit's snapshotter
-/// only hands an image over once every tile is in, so nothing on screen can still be loading.
+/// Satellite snapshots of the city at widening spans, fetched behind the loading cover before the
+/// live map loads its views.
 final class ZoomImagery {
     struct Level {
         let image: UIImage
@@ -100,65 +240,6 @@ final class ZoomImagery {
     private var snapshotters: [MKMapSnapshotter] = []
 
     var isComplete: Bool { started && pending == 0 }
-
-    /// The city in 3D at `EarthZoom.riseCamera` steps, full screen: the tower first (the gate),
-    /// straight down last (where the zoom takes over). Nil where a frame didn't come.
-    private(set) var cityFrames: [UIImage?] = []
-    /// Metres per point straight down, measured on the last frame, for the zoom.
-    private(set) var handoffScale: Double?
-    private var cityStarted = false
-    private var cityPending = 0
-
-    var cityIsComplete: Bool { cityStarted && cityPending == 0 }
-
-    /// Fetches the city's frames at the screen's `size` and `scale`.
-    func fetchCity(size: CGSize, scale: CGFloat) {
-        guard !cityStarted, size.width > 0, size.height > 0 else { return }
-        cityStarted = true
-        let count = EarthZoom.cityFrameCount
-        cityFrames = Array(repeating: nil, count: count)
-        cityPending = count
-        for index in 0..<count {
-            requestCityFrame(index, size: size, scale: scale, realistic: true)
-        }
-    }
-
-    /// One frame of the city; a 3D one that fails is asked for again flat.
-    private func requestCityFrame(_ index: Int, size: CGSize, scale: CGFloat, realistic: Bool) {
-        let options = MKMapSnapshotter.Options()
-        options.camera = EarthZoom.riseCamera(Double(index) / Double(EarthZoom.cityFrameCount - 1))
-        options.size = size
-        options.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: realistic ? .realistic : .flat)
-        options.pointOfInterestFilter = .excludingAll
-        options.traitCollection = UITraitCollection(displayScale: scale)
-        let snapshotter = MKMapSnapshotter(options: options)
-        snapshotters.append(snapshotter)
-        snapshotter.start(with: .main) { [weak self] snapshot, _ in
-            guard let self else { return }
-            guard let snapshot else {
-                if realistic {
-                    self.requestCityFrame(index, size: size, scale: scale, realistic: false)
-                } else {
-                    self.cityPending -= 1
-                }
-                return
-            }
-            self.cityFrames[index] = snapshot.image
-            if index == EarthZoom.cityFrameCount - 1 {
-                self.handoffScale = Self.metersPerPoint(on: snapshot)
-            }
-            self.cityPending -= 1
-        }
-    }
-
-    /// Metres per point across the middle of a snapshot looking straight down at the city.
-    private static func metersPerPoint(on snapshot: MKMapSnapshotter.Snapshot) -> Double? {
-        let center = snapshot.point(for: EarthZoom.city)
-        let probe = snapshot.point(for: EarthZoom.destination(from: EarthZoom.city, bearing: 90, meters: 200))
-        let distance = Double(hypot(probe.x - center.x, probe.y - center.y))
-        guard distance.isFinite, distance > 1 else { return nil }
-        return 200 / distance
-    }
 
     /// `handoff` is metres per point when MapKit hands over; `diagonal` the screen's, in points.
     /// The first snapshot covers the screen's diagonal with room to spare at that scale.
