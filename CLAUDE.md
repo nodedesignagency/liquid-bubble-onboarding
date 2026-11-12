@@ -132,6 +132,10 @@ south and east of a corner by the tower (on z15 tile lines), at the tower, mid-r
 down, while the Simulator draws the Champ de Mars fine. Apple's 3D city data for that block never
 loads on their phone, so waiting can't fix it. The opening now checks for holes
 (`EarthZoom.holeFraction`) and falls back to flat satellite imagery (`EarthZoom.realistic`).
+"Same issue" with that too, and they asked to keep the 3D tower and try New York: the city is
+now the Empire State Building (40.74844, -73.98566, heading 29, up Manhattan's avenues), in 3D,
+with no flat fallback, and fewer snapshot requests (the rise's prefetches are gone: every
+snapshot is another request, and they hadn't helped).
 
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
@@ -144,26 +148,22 @@ loads on their phone, so waiting can't fix it. The opening now checks for holes
      each 3.2x wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt at 2x; under 20 km in 3D
      like the live map, so the handover doesn't jump; a failed one is asked for again flat), each
      measured on itself (points per radian of longitude at the city), at most 25 s. Before those,
-     `CityMapController.prefetch` downloads the views of the rise one at a time (the tower, straight
-     down, then t 0.5, 0.25, 0.75; 15 s each, 45 s in all): a snapshot of exactly that view (the
-     map's size and scale, realistic 3D), which MapKit finishes only with every tile in, and
-     caches them for the map. Then, with the network to itself, the map loads every view of the
-     rise (`riseCamera(t)`, `riseSteps`), from straight down to the start camera (the Eiffel
-     Tower, 1.5 km, pitch 62, heading 330), twice (`loadRise`: a view at most 6 s, then 3 s; 25 s
-     in all), and plays the rise and the tilt back up once under the cover (`move(to:within:)`).
-     A view is loaded (`CityMapController.isReady`) when MapKit has finished loading, finished
-     drawing (or said nothing for 1 s) and been quiet 0.6 s (0.2 after a full render), or had
-     nothing to do for 1.5 s; a failed load is asked again at most every 2 s. Not on a full render
-     alone: in 3D MapKit hardly ever reports one. Simulated against scripted MapKit callbacks
-     (scratch). The tower's snapshot is kept (`towerShot`) and shown over the live map while the
-     gate waits (lined up on the city's point, `placeTowerShot`); on the swipe it fades out in
-     0.25 s while both stand still (the rise starts 0.3 s after), and it fades back in once the
-     map has tilted back up at the end. Holes: the tower's 3D snapshot is checked first
-     (`hasHoles`: missing, or over 12% flat colourless 16pt blocks, the grey grid; the city in the
-     Simulator recordings never passed 5%), and the live map at straight down and at the tower
-     after the rehearsal (`showsHoles`, a `drawHierarchy` capture; ignored over 92%, a blank
-     capture). Any holes: `useRealistic(false)` (flat satellite for the live map, the prefetches
-     and every zoom snapshot) and the loading runs again (`prepareCity`). Untested on the phone yet.
+     one snapshot of the start view (`prefetch`, 12 s) for the gate, kept as `towerShot` only if it
+     has no holes (`EarthZoom.hasHoles`: missing, or over 12% flat colourless 16pt blocks,
+     MapKit's grey grid; the city in the Simulator recordings never passed 5%). Then the map
+     loads every view of the rise (`riseCamera(t)`, `riseSteps`), from straight down to the start
+     camera (the Empire State Building, 1.5 km, pitch 62, heading 29), twice (`loadRise`: a view
+     at most 6 s, then 3 s; 25 s in all), and plays the rise and the tilt back up once under the
+     cover (`move(to:within:)`; all in `prepareCity`). A view is loaded
+     (`CityMapController.isReady`) when MapKit has finished loading, finished drawing (or said
+     nothing for 1 s) and been quiet 0.6 s (0.2 after a full render), or had nothing to do for
+     1.5 s; a failed load is asked again at most every 2 s. Not on a full render alone: in 3D
+     MapKit hardly ever reports one. Simulated against scripted MapKit callbacks (scratch). The
+     start view's snapshot is shown over the live map while the gate waits (lined up on the
+     city's point, `placeTowerShot`); on the swipe it fades out in 0.25 s while both stand still
+     (the rise starts 0.3 s after), and it fades back in once the map has tilted back up at the
+     end. Paris (the Eiffel Tower, heading 330) never loaded a block of its 3D city on the
+     user's iPhone. `EarthZoom.startRoll` unwinds the heading the short way (-29 for New York).
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
      iOS 26) rises from below (`SpringCurve.domeIn`), lit inside like Wabi's dome in Aurora's
@@ -184,7 +184,7 @@ loads on their phone, so waiting can't fix it. The opening now checks for holes
      centre and turn, so the photo turns into the glowing map coast on coast. Pulling back
      further, it curls into the sphere (flatness to 0 by `curlTo`, where the globe's edge is still
      12% beyond the screen's corners, so no edge shows mid-curl), its aura grows in, and it drifts
-     to its place and turns from Paris to 25N 12E. (Replaced: the ring sweep the user hated; the
+     to its place and turns from New York to 25N 12E. (Replaced: the ring sweep the user hated; the
      first flat crossfade, whose doubled coastlines came from a sphere over a flat photo; and
      satellite photos on the sphere, which broke the shader, see above.)
   5. "Everyone you love, / in one orbit." under the globe; pins (`.pins`): Earth's glass seeps out
@@ -221,7 +221,7 @@ loads on their phone, so waiting can't fix it. The opening now checks for holes
      friends melt into Earth while the map loads the way back again behind the globe (`loadRise`
      toward straight down, at least 1 s, at most 8; the city is hidden under an opaque cover,
      never made transparent, so MapKit keeps it, and the dot grid sits over the zoom layer), the
-     zoom runs backwards (3.6 s), the map tilts back up to the tower (`settle`),
+     zoom runs backwards (3.6 s), the map tilts back up to the start view (`settle`),
      the dome rises again (the first frame, so a recording loops), then home.
 - Globe (`Orbit/Bubbles/HoloGlobe.swift`, shader `holoGlobe`): drawn per pixel, so it's sharp at
   any size. Geometry `GlobeMath` (pinhole camera, `distance` in Earth radii; 9 at rest, globe

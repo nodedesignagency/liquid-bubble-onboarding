@@ -4,7 +4,7 @@
 # (WorldPhoto), the dot grid, the copy, the buttons, and a finger showing the swipe and the taps.
 # Keep the timings (V3_*) in sync with WorldOnboardingView and tools/engine/record.swift (v3 script).
 #
-# What it can't show: the city (MapKit's 3D Paris) and the satellite snapshots the zoom is drawn
+# What it can't show: the city (MapKit's 3D New York) and the satellite snapshots the zoom is drawn
 # from. The city is a labelled stand-in; the snapshots are the same coastline drawn flat in plain
 # photo colours (`globe.py`'s `PHOTO`), which the flat hologram fades in over, so the motion,
 # framing and registration are meaningful but not the imagery. Glass is drawn the way it looks before iOS 26 (a dark outline, a frosted
@@ -29,13 +29,13 @@ INK, INK2 = (0xF5, 0xF5, 0xF7), (0x8E, 0x8E, 0x93)                  # Theme.worl
 GLASS = (0x16, 0x16, 0x1A)                                           # Theme.worldGlass
 HUB = (0.0, -120.0); HUB_R = 91.0; GLOBE_R = 84.0                     # OrbitChoreography.bloomEarth, globeRadius
 GLOBE_VIEW = (25.0, 12.0, 9.0)                                       # globeView: latitude, longitude, distance
-CITY = (48.8584, 2.2945)                                             # EarthZoom.city
+CITY = (40.74844, -73.98566)                                         # EarthZoom.city
 COPY_GAP = 22.0                                                      # WorldOnboardingView.copyGap
 BUTTON_H, BUTTON_GAP, SIDE = 50.0, 13.0, 20.0                        # WorldButton.height, the footer's spacing, its margins
 FOOTER_TOP = 874 - 34 - 8 - (BUTTON_H * 2 + BUTTON_GAP * 2 + 6 + 15)   # safe area, padding, buttons and legal line
 EARTH_RADIUS = 6371000.0
 METERS_PER_POINT = 4.0                                               # assumed handover scale
-START_ROLL = 30.0                                                    # 360 - EarthZoom.heading
+START_ROLL = -29.0                                                   # EarthZoom.startRoll
 NAMES = {1: "Maya", 2: "Kwame", 3: "Ines", 4: "Kai", 5: "Amara", 6: "Zoe", 7: "Omar", 8: "Layla", 9: "Lena"}  # Person.samples
 CITIES = {1: "London", 2: "Lagos", 3: "Johannesburg", 4: "Istanbul", 5: "Nairobi", 6: "Dubai", 7: "Berlin", 8: "Cairo", 9: "Lisbon"}
 MOMENTS = range(16, 40)                                               # OrbitChoreography.momentIDs
@@ -363,7 +363,7 @@ for fi in sorted(rows):
     if u is None or (stack < 1 and u < 0.2):
         cover = 1 - (1 - min(t / V3_COVER, 1)) ** 2 if t < V3_ZOOM else 1.0
         rgb = CANVAS + (CITY_RGB - CANVAS) * cover
-        labels.append(("stand-in: MapKit's 3D Paris, the Eiffel Tower", 0.5 * H, (40, 40, 48)))
+        labels.append(("stand-in: MapKit's 3D New York, the Empire State Building", 0.5 * H, (40, 40, 48)))
     # the flat snapshots (stand-in: the same coastline, flat, in photo colours)
     if u is not None and stack > 0:
         s = zscale(u)

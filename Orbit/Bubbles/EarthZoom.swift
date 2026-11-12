@@ -6,7 +6,7 @@ import MapKit
 /// level outran them (the user's recording was grey for three seconds), so the zoom is drawn here
 /// instead, from imagery fetched before it starts:
 ///
-/// 1. The city: a live `MKMapView` (3D Paris), shown only once MapKit has loaded every view the
+/// 1. The city: a live `MKMapView` (3D New York), shown only once MapKit has loaded every view the
 ///    rise passes through.
 /// 2. First, satellite snapshots of the same spot at widening spans are fetched (`ZoomImagery`),
 ///    each about 3x wider than the last, up to a few thousand kilometres; the first ones in 3D
@@ -20,12 +20,15 @@ import MapKit
 ///
 /// Everything after the handover is a pure function of time (`ZoomPath`), so nothing can load late.
 enum EarthZoom {
-    /// The Eiffel Tower, seen across the river from a few rooftops up. Other Flyover cities that
-    /// look good (latitude, longitude): New York's Lower Manhattan (40.7061, -74.0087), San
-    /// Francisco's Golden Gate (37.8078, -122.4750), Tokyo Tower (35.6586, 139.7454). The real app
-    /// would start where the user is.
-    static let city = CLLocationCoordinate2D(latitude: 48.8584, longitude: 2.2945)
-    static let heading: Double = 330
+    /// The Empire State Building, seen from the south up Manhattan's avenues (the grid runs 29
+    /// degrees east of north), Midtown's towers behind it. It was the Eiffel Tower (48.8584,
+    /// 2.2945, heading 330), but Apple's 3D city never loaded a block round it on the user's
+    /// iPhone (the same block every time; fine in the Simulator), so they asked for New York.
+    /// Other Flyover views (latitude, longitude): Lower Manhattan (40.7061, -74.0087), San
+    /// Francisco's Golden Gate (37.8078, -122.4750), Tokyo Tower (35.6586, 139.7454). The real
+    /// app would start where the user is.
+    static let city = CLLocationCoordinate2D(latitude: 40.74844, longitude: -73.98566)
+    static let heading: Double = 29
     static let startDistance: Double = 1_500
     static let startPitch: CGFloat = 62
     /// Where MapKit hands over to the snapshots: straight down, a little higher.
@@ -52,7 +55,11 @@ enum EarthZoom {
     static let zoomBack: Double = 3.6
     /// The map's heading turns the snapshots and the globe on screen at first; this unwinds to
     /// north up over the first three quarters of the zoom.
-    static var startRoll: Double { 360 - heading }
+    /// The short way round (Paris's heading 330 gave 30; New York's 29 gives -29, not 331).
+    static var startRoll: Double {
+        let roll = (360 - heading).truncatingRemainder(dividingBy: 360)
+        return roll > 180 ? roll - 360 : roll
+    }
 
     /// Each snapshot covers this many times the span of the one before, up to `largestSpan`.
     static let spanStep: Double = 3.2
@@ -61,14 +68,8 @@ enum EarthZoom {
     /// grading), so the handover from the map doesn't jump; wider ones are flat satellite imagery.
     static let realisticSpan: Double = 20_000
 
-    /// Apple's 3D city ("realistic" imagery) for the live map and the nearest snapshots. On the
-    /// user's iPhone a block of it round the tower never loaded (the same block south and east of
-    /// it every time, however long the wait, in the live map and in snapshots; fine in the
-    /// Simulator), so the opening checks for holes and falls back to flat satellite imagery.
-    static var realistic = true
-    static var imagery: MKImageryMapConfiguration {
-        MKImageryMapConfiguration(elevationStyle: realistic ? .realistic : .flat)
-    }
+    /// Apple's 3D city, for the live map and the nearest snapshots.
+    static var imagery: MKImageryMapConfiguration { MKImageryMapConfiguration(elevationStyle: .realistic) }
 
     /// How much of a picture of the map is MapKit's grey loading grid (or nothing): flat,
     /// colourless patches, which a photo of a city doesn't have. Measured on a small copy in
@@ -258,30 +259,10 @@ final class CityMapController: NSObject, MKMapViewDelegate {
             }
             if let snapshot = fetch.snapshot { return snapshot }
             fetch.cancel()
-            try? await Task.sleep(for: .seconds(0.5))
+            try? await Task.sleep(for: .seconds(2))
             if Task.isCancelled { return nil }
         }
         return nil
-    }
-
-    /// Switches the live map between Apple's 3D city and flat satellite imagery.
-    func useRealistic(_ on: Bool) {
-        EarthZoom.realistic = on
-        resetLoadState()
-        mapView.preferredConfiguration = EarthZoom.imagery
-    }
-
-    /// Whether the live map, as it is now, shows holes (MapKit's grey loading grid). False if it
-    /// can't tell (a capture that comes back blank).
-    func showsHoles() -> Bool {
-        guard mapView.bounds.width > 0, mapView.window != nil else { return false }
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let image = UIGraphicsImageRenderer(bounds: mapView.bounds, format: format).image { _ in
-            mapView.drawHierarchy(in: mapView.bounds, afterScreenUpdates: false)
-        }
-        guard let fraction = EarthZoom.holeFraction(image) else { return false }
-        return fraction > 0.12 && fraction < 0.92
     }
 
     /// Where the city is on the live map, in its points.
@@ -421,7 +402,7 @@ final class ZoomImagery {
         for (index, span) in spans.enumerated() {
             // The first is seen largest, right as MapKit hands over, so it gets the most pixels.
             request(span: span, side: index == 0 ? 1_100 : 800, scale: index == 0 ? 3 : 2,
-                    realistic: span < EarthZoom.realisticSpan && EarthZoom.realistic)
+                    realistic: span < EarthZoom.realisticSpan)
         }
     }
 
