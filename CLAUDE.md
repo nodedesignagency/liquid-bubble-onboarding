@@ -17,6 +17,10 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
   recordings and screenshots back. Pull frames out with ffmpeg and compare closely before answering.
 - `scripts/run.sh` prints only the error lines when the build fails; the full log is in
   `build/xcodebuild.log` on their machine.
+- Run from Xcode on their iPhone, the app stopped on "hit program assert" (a Metal API Validation
+  assertion: "...must be MTLPixelFormatInvalid, as no texture is set", inside Apple's rendering,
+  most likely MapKit's 3D map). Validation only runs under Xcode's debugger, so the shared scheme
+  turns it off (`enableGPUValidationMode = "1"`); launched from the home screen it never asserted.
 - Cloud sessions have no Xcode, so SwiftUI can't be compiled here. Be careful: run `swiftc -parse`
   on every file, run the engine checks (below), and after renaming anything grep the whole project
   for the old name (a renamed scene broke the build once).
