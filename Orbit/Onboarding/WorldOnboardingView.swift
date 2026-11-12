@@ -254,45 +254,38 @@ struct WorldOnboardingView: View {
         return ZoomPath.ease((t - start) / 0.6)
     }
 
-    /// The city at `t`: its frame along the rise, crossfading into the next.
+    /// The city at `t`: the tower view pulling back into the view straight down, one continuous
+    /// move (eight stills crossfaded in turn looked laggy on an iPhone). The tower eases from
+    /// 1.15x to 1x and fades out while the view straight down comes in from 1.25x to 1x, so both
+    /// always cover the screen and it lands exactly where the zoom takes over.
     @ViewBuilder
     private func cityView(at t: Double, size: CGSize) -> some View {
         let frames = imagery.cityFrames
-        let x = cityPosition(at: t)
-        let lower = min(max(Int(x.rounded(.down)), 0), max(frames.count - 1, 0))
-        let upper = min(lower + 1, max(frames.count - 1, 0))
-        let blend = x - Double(lower)
+        let p = cityPosition(at: t)
+        let down = ZoomPath.ease((p - 0.12) / 0.76)
         ZStack {
-            if let image = Self.frame(near: lower, in: frames) {
+            if let image = frames.last ?? nil, p > 0.001 {
                 Image(uiImage: image)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: size.width, height: size.height)
+                    .scaleEffect(1.25 - 0.25 * p)
             }
-            if upper != lower, blend > 0.001, let image = frames[upper] {
+            if let image = frames.first ?? nil, down < 0.999 {
                 Image(uiImage: image)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: size.width, height: size.height)
-                    .opacity(blend)
+                    .scaleEffect(1.15 - 0.15 * p)
+                    .opacity(1 - down)
             }
         }
         .frame(width: size.width, height: size.height)
+        .clipped()
     }
 
-    /// The frame at `index`, or the nearest one that came.
-    private static func frame(near index: Int, in frames: [UIImage?]) -> UIImage? {
-        guard !frames.isEmpty else { return nil }
-        for offset in 0..<frames.count {
-            for i in [index - offset, index + offset] where frames.indices.contains(i) {
-                if let image = frames[i] { return image }
-            }
-        }
-        return nil
-    }
-
-    /// Where along the rise the city is at `t`, in frames: 0 (the tower) until the swipe, tilting
-    /// down to the last (straight down) over `EarthZoom.rise`, and back up after the zoom back.
+    /// Where along the rise the city is at `t`: 0 (the tower) until the swipe, easing to 1
+    /// (straight down) over `EarthZoom.rise`, and back after the zoom back.
     private func cityPosition(at t: Double) -> Double {
         let last = Double(max(imagery.cityFrames.count - 1, 0))
         if let back = riseBackStart { return last * (1 - ZoomPath.ease((t - back) / EarthZoom.rise)) }

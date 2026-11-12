@@ -121,11 +121,10 @@ every tile is in (step 1).
   1. Loading: a dark cover (a spinner after 1.2 s) while MapKit renders everything the opening
      shows as snapshots, which it hands over only once every tile is in (the live `MKMapView` used
      before showed its grey loading grid on an iPhone however long the app waited):
-     `ZoomImagery.fetchCity` takes the city in 3D (realistic elevation) at `cityFrameCount` (8)
-     views along the rise (`riseCamera(t)`: the Eiffel Tower, 1.5 km, pitch 62, heading 330, to
-     straight down from 2.6 km), full screen (the tower at the screen's scale, the rest at up to 2x;
-     a 3D frame that fails is asked for flat); the scale straight down is measured on the last
-     frame (`handoffScale`). Then `fetch` takes satellite snapshots of the same spot, each 3.2x
+     `ZoomImagery.fetchCity` takes the city in 3D (realistic elevation) at two views
+     (`cityFrameCount`, `riseCamera(t)`: the Eiffel Tower, 1.5 km, pitch 62, heading 330, and
+     straight down from 2.6 km), full screen at the screen's scale (a 3D frame that fails is asked
+     for flat); the scale straight down is measured on the last frame (`handoffScale`). Then `fetch` takes satellite snapshots of the same spot, each 3.2x
      wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt at 2x; under 20 km in 3D like the
      city frames, so the handover doesn't jump; a failed one is asked for again flat). Each is
      measured on itself (points per radian of longitude at the city, Web Mercator's scale both
@@ -140,8 +139,11 @@ every tile is in (step 1).
      user's pick) that lifts 4pt every 2.4 s, over "Swipe up to enter". Dragging lifts it with resistance (`EarthLift`, as v2); letting go above 90pt,
      a flick, or a tap on it enters, else it springs back. Entering, it sweeps up off the screen
      (`domeOut`) over the city.
-  3. Rise (0.3 s later, 1.3 s): the city crossfades through its frames from the tower to looking
-     straight down (`cityPosition`, eased); after the zoom back it runs back up the same way.
+  3. Rise (0.3 s later, 1.3 s, `cityPosition` eased): one continuous move, the tower view easing
+     from 1.15x to 1x and fading out over the view straight down, which comes in from 1.25x to 1x
+     (both always cover the screen); after the zoom back it runs back the same way. (Eight frames
+     along the tilt crossfaded in turn looked laggy on an iPhone; the live map's real tilt showed
+     its grey loading grid there.)
   4. Zoom out (5 s, `ZoomPath`): scale eased in log space, slowest while the photo turns into
      the hologram and curls (a dip placed by bisection). `ZoomStack` fades in over the map (0.6 s)
      and crossfades the snapshots by scale (a finer one fades out between covering the screen and

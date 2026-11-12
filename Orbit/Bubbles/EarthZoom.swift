@@ -6,15 +6,15 @@ import MapKit
 /// level outran them (the user's recording was grey for three seconds), so the zoom is drawn here
 /// instead, from imagery fetched before it starts:
 ///
-/// 1. The city: 3D Paris as snapshots too (`ZoomImagery.cityFrames`), the tower view and frames
-///    along the tilt down to looking straight down. A snapshot is only handed over once MapKit has
-///    loaded every tile; the live map showed its grey loading grid on an iPhone however long the
-///    app waited for it.
+/// 1. The city: 3D Paris as two snapshots (`ZoomImagery.cityFrames`), the tower and straight down.
+///    A snapshot is only handed over once MapKit has loaded every tile; the live map showed its
+///    grey loading grid on an iPhone however long the app waited for it.
 /// 2. Meanwhile, satellite snapshots of the same spot at widening spans are fetched, each about
 ///    3x wider than the last, up to a few thousand kilometres. The first ones are drawn in 3D like
 ///    the city, so the handover is seamless.
-/// 3. The city tilts down to looking straight down (crossfading through its frames), then hands
-///    over to the snapshots, which zoom out smoothly (`ZoomStack`). The hologram fades in over
+/// 3. The tower view pulls back into the view straight down (one continuous move: eight stills
+///    crossfaded in turn looked laggy on an iPhone), then hands over to the snapshots, which zoom
+///    out smoothly (`ZoomStack`). The hologram fades in over
 ///    them as a flat map with the same projection, scale and turn (`GlobeState.flatness`), so
 ///    the photo turns into it coast on coast; pulling back further, it curls into the globe
 ///    (`HoloGlobeView`), which drifts to its place on the page.
@@ -44,8 +44,8 @@ enum EarthZoom {
                     pitch: startPitch * CGFloat(1 - t), heading: heading)
     }
 
-    /// How many snapshots of the city along the rise, the tower first, straight down last.
-    static let cityFrameCount = 8
+    /// The city's snapshots along the rise: the tower, and straight down.
+    static let cityFrameCount = 2
 
     /// Seconds: the city flattening and rising, the zoom out to the globe, and the zoom back in.
     static let rise: Double = 1.3
@@ -111,8 +111,7 @@ final class ZoomImagery {
 
     var cityIsComplete: Bool { cityStarted && cityPending == 0 }
 
-    /// Fetches the city's frames at the screen's `size`: the tower at the screen's own `scale`
-    /// (it holds still on the gate), the rest at up to 2x.
+    /// Fetches the city's frames at the screen's `size` and `scale`.
     func fetchCity(size: CGSize, scale: CGFloat) {
         guard !cityStarted, size.width > 0, size.height > 0 else { return }
         cityStarted = true
@@ -120,7 +119,7 @@ final class ZoomImagery {
         cityFrames = Array(repeating: nil, count: count)
         cityPending = count
         for index in 0..<count {
-            requestCityFrame(index, size: size, scale: index == 0 ? scale : min(scale, 2), realistic: true)
+            requestCityFrame(index, size: size, scale: scale, realistic: true)
         }
     }
 
