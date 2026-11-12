@@ -77,16 +77,19 @@ enum EarthZoom {
 /// Owns the live map, says when the view it was last given has loaded, measures its scale, and
 /// moves its camera with UIKit animations (the rise and the tilt back up).
 ///
-/// Loaded means MapKit downloaded what the view needs ("finished loading") and has gone quiet,
-/// not that it reported a full render: in 3D (realistic elevation) it hardly ever does, so a wait
-/// on that ran into every time limit. On an iPhone the old wait (move on if MapKit hadn't started
-/// drawing within 0.8 s, give up after a few seconds) showed its grey loading grid.
+/// Loaded means MapKit downloaded what the view needs ("finished loading"), finished drawing it,
+/// and has gone quiet; not that it reported a full render: in 3D (realistic elevation) it hardly
+/// ever does, so a wait on that ran into every time limit. Those callbacks alone still let an
+/// iPhone show the grey loading grid, so the views are first downloaded with `prefetch`.
 final class CityMapController: NSObject, MKMapViewDelegate {
     let mapView = MKMapView(frame: .zero)
-    /// Since the last jump: MapKit is downloading, has downloaded, has drawn, or failed.
+    /// Since the last move: MapKit is downloading, has downloaded, is drawing, has drawn (fully),
+    /// or failed.
     private var loading = false
     private var startedLoading = false
     private var startedRendering = false
+    private var rendering = false
+    private var fullyRendered = false
     private var failed = false
     private var jumpedAt = Date.timeIntervalSinceReferenceDate
     /// When MapKit last said anything, to wait for it to go quiet.
@@ -106,23 +109,42 @@ final class CityMapController: NSObject, MKMapViewDelegate {
         mapView.camera = EarthZoom.handoffCamera
     }
 
-    /// Shows `camera` at once.
-    func jump(to camera: MKMapCamera) {
+    /// Forget what MapKit said about the last view: a new one is coming.
+    private func resetLoadState() {
         loading = false
         startedLoading = false
         startedRendering = false
+        rendering = false
+        fullyRendered = false
         failed = false
         jumpedAt = Date.timeIntervalSinceReferenceDate
         lastActivity = jumpedAt
+    }
+
+    /// Shows `camera` at once.
+    func jump(to camera: MKMapCamera) {
+        resetLoadState()
         mapView.camera = camera
     }
 
-    /// The view last jumped to has loaded: MapKit finished downloading for it and has been quiet a
-    /// moment, or it never needed anything.
+    /// Moves to `camera` with the rise's own animation (the rise, the tilt back up).
+    func animate(to camera: MKMapCamera) {
+        resetLoadState()
+        UIView.animate(withDuration: EarthZoom.rise, delay: 0, options: [.curveEaseInOut]) {
+            self.mapView.camera = camera
+        }
+    }
+
+    /// The view last moved to has loaded: MapKit finished downloading for it, finished drawing it
+    /// (or stopped saying anything for a second) and has been quiet a moment; or it never needed
+    /// anything.
     var isReady: Bool {
         let now = Date.timeIntervalSinceReferenceDate
         guard now - jumpedAt > 0.4, !loading, !failed else { return false }
-        if startedLoading || startedRendering { return now - lastActivity > 0.4 }
+        let quiet = now - lastActivity
+        if rendering && quiet < 1.0 { return false }
+        if fullyRendered { return quiet > 0.2 }
+        if startedLoading || startedRendering { return quiet > 0.6 }
         return now - jumpedAt > 1.5
     }
 
@@ -130,8 +152,21 @@ final class CityMapController: NSObject, MKMapViewDelegate {
     /// (at most every 2 s) if a download failed. True if it loaded.
     @MainActor
     func load(_ camera: MKMapCamera, within limit: Double) async -> Bool {
-        let deadline = Date.timeIntervalSinceReferenceDate + limit
         jump(to: camera)
+        return await waitUntilLoaded(camera, deadline: Date.timeIntervalSinceReferenceDate + limit)
+    }
+
+    /// Moves to `camera` with the rise's animation and waits, as `load` does, for the view it lands on.
+    @MainActor
+    func move(to camera: MKMapCamera, within limit: Double) async -> Bool {
+        animate(to: camera)
+        try? await Task.sleep(for: .seconds(EarthZoom.rise))
+        if Task.isCancelled { return false }
+        return await waitUntilLoaded(camera, deadline: Date.timeIntervalSinceReferenceDate + limit)
+    }
+
+    @MainActor
+    private func waitUntilLoaded(_ camera: MKMapCamera, deadline: Double) async -> Bool {
         var tries = 0
         while Date.timeIntervalSinceReferenceDate < deadline {
             if isReady { return true }
@@ -146,6 +181,31 @@ final class CityMapController: NSObject, MKMapViewDelegate {
             if Task.isCancelled { return false }
         }
         return isReady
+    }
+
+    /// Downloads everything `camera` needs before the live map is shown it: a snapshot of exactly
+    /// that view (the map's size, scale and 3D style), which MapKit finishes only once every tile
+    /// is in, and keeps them for the map. The map's own callbacks said "loaded" while an iPhone
+    /// still showed the grey loading grid; a snapshot can't finish with a tile missing. A failed
+    /// one is asked again; at most `limit` seconds. True if it finished.
+    @MainActor
+    func prefetch(_ camera: MKMapCamera, within limit: Double) async -> Bool {
+        let size = mapView.bounds.size
+        guard size.width > 0, size.height > 0 else { return false }
+        let scale = mapView.traitCollection.displayScale > 0 ? mapView.traitCollection.displayScale : 3
+        let deadline = Date.timeIntervalSinceReferenceDate + limit
+        while Date.timeIntervalSinceReferenceDate < deadline {
+            let fetch = MapPrefetch(camera: camera, size: size, scale: scale)
+            while !fetch.finished, Date.timeIntervalSinceReferenceDate < deadline {
+                try? await Task.sleep(for: .milliseconds(60))
+                if Task.isCancelled { fetch.cancel(); return false }
+            }
+            if fetch.succeeded { return true }
+            fetch.cancel()
+            try? await Task.sleep(for: .seconds(0.5))
+            if Task.isCancelled { return false }
+        }
+        return false
     }
 
     func mapViewWillStartLoadingMap(_ mapView: MKMapView) {
@@ -167,11 +227,15 @@ final class CityMapController: NSObject, MKMapViewDelegate {
 
     func mapViewWillStartRenderingMap(_ mapView: MKMapView) {
         startedRendering = true
+        rendering = true
+        fullyRendered = false
         lastActivity = Date.timeIntervalSinceReferenceDate
         estimateIfNeeded()
     }
 
     func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
+        rendering = false
+        self.fullyRendered = fullyRendered
         lastActivity = Date.timeIntervalSinceReferenceDate
         estimateIfNeeded()
     }
@@ -193,17 +257,35 @@ final class CityMapController: NSObject, MKMapViewDelegate {
     }
 
     /// Flatten to looking straight down and rise to the handover camera.
-    func rise() {
-        UIView.animate(withDuration: EarthZoom.rise, delay: 0, options: [.curveEaseInOut]) {
-            self.mapView.camera = EarthZoom.handoffCamera
+    func rise() { animate(to: EarthZoom.handoffCamera) }
+
+    /// Back down to the start camera, tilting up to the tower.
+    func settle() { animate(to: EarthZoom.startCamera) }
+}
+
+/// One snapshot of a view of the live map, taken only to download its tiles (see `prefetch`).
+private final class MapPrefetch {
+    private(set) var finished = false
+    private(set) var succeeded = false
+    private let snapshotter: MKMapSnapshotter
+
+    init(camera: MKMapCamera, size: CGSize, scale: CGFloat) {
+        let options = MKMapSnapshotter.Options()
+        options.camera = camera
+        options.size = size
+        options.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .realistic)
+        options.pointOfInterestFilter = .excludingAll
+        options.traitCollection = UITraitCollection(displayScale: scale)
+        snapshotter = MKMapSnapshotter(options: options)
+        snapshotter.start(with: .main) { [weak self] snapshot, _ in
+            self?.succeeded = snapshot != nil
+            self?.finished = true
         }
     }
 
-    /// Back down to the start camera, tilting up to the tower.
-    func settle() {
-        UIView.animate(withDuration: EarthZoom.rise, delay: 0, options: [.curveEaseInOut]) {
-            self.mapView.camera = EarthZoom.startCamera
-        }
+    func cancel() {
+        snapshotter.cancel()
+        finished = true
     }
 }
 

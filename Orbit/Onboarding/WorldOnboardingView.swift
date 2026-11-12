@@ -243,8 +243,8 @@ struct WorldOnboardingView: View {
         return min(max((t - start) / EarthZoom.zoomOut, 0), 1)
     }
 
-    /// The snapshots fade in over the map as the zoom starts (slowly: the first is drawn in 3D like
-    /// the map, so it should melt into it) and are dropped once the globe has taken over; on the
+    /// The snapshots fade in over the map as the zoom starts (quickly, so nothing the map is still
+    /// drawing shows; the first is drawn in 3D like the map, so it melts into it) and are dropped once the globe has taken over; on the
     /// way back they fade out over the map at the end.
     private func stackOpacity(at t: Double, u: Double?) -> Double {
         guard let path, let u, let start = zoomStart, path.showsSnapshots(at: u) else { return 0 }
@@ -252,7 +252,7 @@ struct WorldOnboardingView: View {
             let left = EarthZoom.zoomBack - (t - back)
             return ZoomPath.ease(left / 0.6)
         }
-        return ZoomPath.ease((t - start) / 0.6)
+        return ZoomPath.ease((t - start) / 0.35)
     }
 
     private func showsCity(u: Double?, stack: Double) -> Bool {
@@ -553,9 +553,12 @@ struct WorldOnboardingView: View {
         }
     }
 
-    /// Behind the cover: the zoom's snapshots first, then the live map loads every view the rise
-    /// passes through, with the network to itself (on an iPhone, the two at once starved the map,
-    /// which showed its grey loading grid); then the dome rises and waits for the swipe.
+    /// Behind the cover: every view the rise passes through is downloaded first (`prefetch`: a
+    /// snapshot of it, which can't finish with a tile missing; the map's own "loaded" let an
+    /// iPhone show its grey loading grid), then the zoom's snapshots, then the live map loads
+    /// those views from what's been downloaded, plays the rise and the tilt back up once under the
+    /// cover, and the dome rises and waits for the swipe. One thing at a time: on an iPhone,
+    /// downloads at once starved each other.
     private func playIntro() async {
         let size = stageSize
         let diagonal = hypot(size.width, size.height)
@@ -568,10 +571,22 @@ struct WorldOnboardingView: View {
         // It starts at the handover camera, looking straight down: the zoom's imagery can be
         // fetched as soon as the map knows its scale.
         _ = await waitUntil(5, { city.handoffEstimate != nil })
+        // The tower (the gate), straight down (the handover), then the views between.
+        let prefetchEnds = now + 45
+        for t in [0, 1, 0.5, 0.25, 0.75] {
+            let left = prefetchEnds - now
+            guard left > 0 else { break }
+            _ = await city.prefetch(EarthZoom.riseCamera(t), within: min(left, 15))
+            if Task.isCancelled { return }
+        }
         imagery.fetch(handoff: city.handoffEstimate ?? 3.5, diagonal: diagonal)
-        guard await waitUntil(12, { imagery.isComplete }) else { return }
+        guard await waitUntil(25, { imagery.isComplete }) else { return }
         // From straight down back to the tower, where the gate waits.
         guard await loadRise(city, towardTower: true, within: 25) else { return }
+        // The real moves once under the cover, so MapKit has drawn every frame of them.
+        _ = await city.move(to: EarthZoom.handoffCamera, within: 5)
+        _ = await city.move(to: EarthZoom.startCamera, within: 5)
+        if Task.isCancelled { return }
 
         phase = .gate
         withAnimation(.easeOut(duration: 0.8)) {

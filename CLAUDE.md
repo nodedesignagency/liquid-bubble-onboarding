@@ -115,7 +115,10 @@ snapshots (eight frames crossfaded, then two in one pull-back) looked laggy, the
 wants the original live 3D tilt, with only the loading fixed. So the live map is back (step 1):
 the zoom's snapshots load first and the map afterwards with the network to itself (the two at once
 starved it on the phone), and a view counts as loaded when MapKit says it finished loading and
-goes quiet, not on a full render.
+goes quiet, not on a full render. That build still showed the grey grid on the phone in the same
+three places ("fix this bro fast pls"): MapKit's callbacks said loaded too early there. So every
+view of the tilt is now downloaded first with a snapshot of exactly that view (which can't finish
+with a tile missing), and the real moves play once under the cover before the gate.
 
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
@@ -127,13 +130,19 @@ goes quiet, not on a full render.
      map's scale. First `ZoomImagery` fetches satellite snapshots of the same spot (`MKMapSnapshotter`),
      each 3.2x wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt at 2x; under 20 km in 3D
      like the live map, so the handover doesn't jump; a failed one is asked for again flat), each
-     measured on itself (points per radian of longitude at the city), at most 12 s. Then, with the
-     network to itself, the map loads every view of the rise (`riseCamera(t)`, `riseSteps`), from
-     straight down to the start camera (the Eiffel Tower, 1.5 km, pitch 62, heading 330), twice
-     (`loadRise`: a view at most 6 s, then 3 s; 25 s in all). A view is loaded
-     (`CityMapController.isReady`) when MapKit has finished loading and been quiet 0.4 s, or had
-     nothing to do for 1.5 s; a failed load is asked again at most every 2 s. Not on a full render:
-     in 3D MapKit hardly ever reports one. Simulated against scripted MapKit callbacks (scratch).
+     measured on itself (points per radian of longitude at the city), at most 25 s. Before those,
+     `CityMapController.prefetch` downloads the views of the rise one at a time (the tower, straight
+     down, then t 0.5, 0.25, 0.75; 15 s each, 45 s in all): a snapshot of exactly that view (the
+     map's size and scale, realistic 3D), which MapKit finishes only with every tile in, and
+     caches them for the map. Then, with the network to itself, the map loads every view of the
+     rise (`riseCamera(t)`, `riseSteps`), from straight down to the start camera (the Eiffel
+     Tower, 1.5 km, pitch 62, heading 330), twice (`loadRise`: a view at most 6 s, then 3 s; 25 s
+     in all), and plays the rise and the tilt back up once under the cover (`move(to:within:)`).
+     A view is loaded (`CityMapController.isReady`) when MapKit has finished loading, finished
+     drawing (or said nothing for 1 s) and been quiet 0.6 s (0.2 after a full render), or had
+     nothing to do for 1.5 s; a failed load is asked again at most every 2 s. Not on a full render
+     alone: in 3D MapKit hardly ever reports one. Simulated against scripted MapKit callbacks
+     (scratch). Untested on the phone yet.
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
      iOS 26) rises from below (`SpringCurve.domeIn`), lit inside like Wabi's dome in Aurora's
@@ -146,7 +155,7 @@ goes quiet, not on a full render.
      (`domeOut`) over the city.
   3. Rise (0.3 s later, 1.3 s, UIKit camera animation of the live map): pitch to 0, distance 2.6 km.
   4. Zoom out (5 s, `ZoomPath`): scale eased in log space, slowest while the photo turns into
-     the hologram and curls (a dip placed by bisection). `ZoomStack` fades in over the map (0.6 s)
+     the hologram and curls (a dip placed by bisection). `ZoomStack` fades in over the map (0.35 s)
      and crossfades the snapshots by scale (a finer one fades out between covering the screen and
      covering half of it), turned by the map's heading and unwinding to north up. While the widest
      snapshot still covers the screen (about 1.5 to 4 km/pt, 2.5-3.2 s in), the hologram fades in
