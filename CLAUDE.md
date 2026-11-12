@@ -17,6 +17,11 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
   recordings and screenshots back. Pull frames out with ffmpeg and compare closely before answering.
 - `scripts/run.sh` prints only the error lines when the build fails; the full log is in
   `build/xcodebuild.log` on their machine.
+- `scripts/run.sh` only installs on the Simulator. The user also puts the app on their iPhone from
+  Xcode (Run with the phone selected, after a Clean Build Folder). Their `git pull` can refuse
+  when Xcode has rewritten the shared scheme (it does on opening); then the phone keeps the old
+  build. The fix is `git fetch origin && git reset --hard origin/claude/nice-cori-ypokiu` (they
+  don't edit code; Xcode may then need their team again under Signing & Capabilities).
 - Run from Xcode on their iPhone, the app stopped on "hit program assert" (a Metal API Validation
   assertion: "...must be MTLPixelFormatInvalid, as no texture is set", inside Apple's rendering,
   most likely MapKit's 3D map). Validation only runs under Xcode's debugger, so the shared scheme
