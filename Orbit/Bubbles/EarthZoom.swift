@@ -35,11 +35,16 @@ enum EarthZoom {
     static var handoffCamera: MKMapCamera {
         MKMapCamera(lookingAtCenter: city, fromDistance: handoffDistance, pitch: 0, heading: heading)
     }
-    /// Halfway through the rise: rendered once while the city is still covered, with the other two,
-    /// so the rise never shows ground MapKit hasn't loaded (the user saw grey wedges open up).
-    static var midCamera: MKMapCamera {
-        MKMapCamera(lookingAtCenter: city, fromDistance: (startDistance + handoffDistance) / 2, pitch: startPitch / 2, heading: heading)
+    /// A view along the rise, `t` from 0 (the start camera) to 1 (the handover camera). The rise's
+    /// views are loaded while the city is still covered, so it never shows ground MapKit hasn't
+    /// loaded (on an iPhone it showed its grey loading grid where it hadn't).
+    static func riseCamera(_ t: Double) -> MKMapCamera {
+        MKMapCamera(lookingAtCenter: city, fromDistance: startDistance + (handoffDistance - startDistance) * t,
+                    pitch: startPitch * CGFloat(1 - t), heading: heading)
     }
+
+    /// The views the rise passes through, from the start to the handover.
+    static let riseSteps: [Double] = [0, 1.0 / 3, 2.0 / 3, 1]
 
     /// Seconds: the city flattening and rising, the zoom out to the globe, and the zoom back in.
     static let rise: Double = 1.3
@@ -75,12 +80,15 @@ enum EarthZoom {
 /// showing the start.
 final class CityMapController: NSObject, MKMapViewDelegate {
     let mapView = MKMapView(frame: .zero)
-    /// The camera last jumped to has fully rendered.
-    private(set) var isRendered = false
-    /// MapKit started drawing since the last jump. It doesn't when it already has the view, so
-    /// `isReady` stops waiting shortly after a jump that never started rendering.
+    /// MapKit drew the camera last jumped to in full (every tile loaded) since the jump.
+    private var renderedFully = false
+    /// Since the last jump: MapKit is downloading tiles, has started drawing, or failed to load.
+    private var loading = false
     private var startedRendering = false
+    private var failed = false
     private var jumpedAt = Date.timeIntervalSinceReferenceDate
+    /// When MapKit last said anything (loading or drawing), to wait for it to go quiet.
+    private var lastActivity = Date.timeIntervalSinceReferenceDate
     /// Metres per screen point at the handover camera, measured as soon as the map has a size
     /// (across the middle, pitch doesn't change the horizontal scale).
     private(set) var handoffEstimate: Double?
@@ -96,27 +104,83 @@ final class CityMapController: NSObject, MKMapViewDelegate {
         mapView.camera = EarthZoom.handoffCamera
     }
 
-    /// Shows `camera` at once; `isRendered` turns true again once MapKit has drawn it all.
+    /// Shows `camera` at once; `isReady` turns true again once MapKit has loaded and drawn it all.
     func jump(to camera: MKMapCamera) {
-        isRendered = false
+        renderedFully = false
+        loading = false
         startedRendering = false
+        failed = false
         jumpedAt = Date.timeIntervalSinceReferenceDate
+        lastActivity = jumpedAt
         mapView.camera = camera
     }
 
-    /// The camera last jumped to is on screen in full: rendered, or never needed rendering.
+    /// The camera last jumped to is on screen in full: drawn with every tile, nothing still
+    /// downloading, and MapKit quiet for a moment; or MapKit never had anything to do for it.
+    /// (It used to count a view as ready if MapKit hadn't started drawing within 0.8 s, and gave up
+    /// waiting after a few seconds: on an iPhone, where tiles come in slower than in the
+    /// Simulator, the city showed MapKit's grey loading grid.)
     var isReady: Bool {
-        isRendered || (!startedRendering && Date.timeIntervalSinceReferenceDate - jumpedAt > 0.8)
+        let now = Date.timeIntervalSinceReferenceDate
+        // (Fully drawn but still flagged as downloading: ready once MapKit has been quiet a while.)
+        if renderedFully { return now - lastActivity > (loading ? 1.5 : 0.3) }
+        return !startedRendering && !loading && now - jumpedAt > 1.5
+    }
+
+    /// Jumps to `camera` and waits until MapKit has loaded and drawn all of it, for at most
+    /// `limit` seconds, nudging it to try again if a download failed or it stalled. True if it got
+    /// there.
+    @MainActor
+    func load(_ camera: MKMapCamera, within limit: Double) async -> Bool {
+        let deadline = Date.timeIntervalSinceReferenceDate + limit
+        jump(to: camera)
+        var tries = 0
+        while Date.timeIntervalSinceReferenceDate < deadline {
+            if isReady { return true }
+            let now = Date.timeIntervalSinceReferenceDate
+            // At most every 2 s, so a network that fails at once isn't asked dozens of times.
+            if now - jumpedAt > 2, failed || (!loading && !renderedFully && now - lastActivity > 3) {
+                // A failed download, or nothing happening: ask again (a hair further away, so
+                // MapKit treats it as a new view).
+                tries += 1
+                let retry = MKMapCamera(lookingAtCenter: camera.centerCoordinate,
+                                        fromDistance: camera.centerCoordinateDistance * (1 + 0.0004 * Double(tries)),
+                                        pitch: camera.pitch, heading: camera.heading)
+                jump(to: retry)
+            }
+            try? await Task.sleep(for: .milliseconds(60))
+            if Task.isCancelled { return false }
+        }
+        return isReady
+    }
+
+    func mapViewWillStartLoadingMap(_ mapView: MKMapView) {
+        loading = true
+        lastActivity = Date.timeIntervalSinceReferenceDate
+    }
+
+    func mapViewDidFinishLoadingMap(_ mapView: MKMapView) {
+        loading = false
+        lastActivity = Date.timeIntervalSinceReferenceDate
+    }
+
+    func mapViewDidFailLoadingMap(_ mapView: MKMapView, withError error: Error) {
+        loading = false
+        failed = true
+        lastActivity = Date.timeIntervalSinceReferenceDate
     }
 
     func mapViewWillStartRenderingMap(_ mapView: MKMapView) {
         startedRendering = true
+        lastActivity = Date.timeIntervalSinceReferenceDate
         estimateIfNeeded()
     }
 
     func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
         estimateIfNeeded()
-        if fullyRendered { isRendered = true }
+        lastActivity = Date.timeIntervalSinceReferenceDate
+        // A later pass that isn't complete (more tiles on their way) undoes an earlier full one.
+        renderedFully = fullyRendered
     }
 
     private func estimateIfNeeded() {
@@ -197,23 +261,33 @@ final class ZoomImagery {
         pending = spans.count
         for (index, span) in spans.enumerated() {
             // The first is seen largest, right as MapKit hands over, so it gets the most pixels.
-            request(span: span, side: index == 0 ? 1_100 : 800, scale: index == 0 ? 3 : 2)
+            request(span: span, side: index == 0 ? 1_100 : 800, scale: index == 0 ? 3 : 2,
+                    realistic: span < EarthZoom.realisticSpan)
         }
     }
 
-    private func request(span: Double, side: CGFloat, scale: CGFloat) {
+    /// One snapshot; a 3D one that fails is asked for again flat, and a flat one once more, so
+    /// a slow network costs a little time rather than a hole in the zoom.
+    private func request(span: Double, side: CGFloat, scale: CGFloat, realistic: Bool, retried: Bool = false) {
         let options = MKMapSnapshotter.Options()
         options.region = MKCoordinateRegion(center: EarthZoom.city, latitudinalMeters: span, longitudinalMeters: span)
         options.size = CGSize(width: side, height: side)
-        options.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: span < EarthZoom.realisticSpan ? .realistic : .flat)
+        options.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: realistic ? .realistic : .flat)
         options.pointOfInterestFilter = .excludingAll
         options.traitCollection = UITraitCollection(displayScale: scale)
         let snapshotter = MKMapSnapshotter(options: options)
         snapshotters.append(snapshotter)
         snapshotter.start(with: .main) { [weak self] snapshot, _ in
             guard let self else { return }
+            guard let snapshot, let level = Self.measure(snapshot, span: span) else {
+                if realistic || !retried {
+                    self.request(span: span, side: side, scale: scale, realistic: false, retried: !realistic)
+                } else {
+                    self.pending -= 1
+                }
+                return
+            }
             self.pending -= 1
-            guard let snapshot, let level = Self.measure(snapshot, span: span) else { return }
             self.levels.append(level)
             self.levels.sort { $0.metersPerPoint < $1.metersPerPoint }
         }

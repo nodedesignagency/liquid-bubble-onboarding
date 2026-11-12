@@ -95,6 +95,12 @@ from a picture they sent instead of the handle. The copy moved down to 20-24pt a
 (that was the red line). Buttons: Apple in white, Google in glass (Liquid Glass, as before),
 sized like their reference with the mark pinned left and the words centred.
 
+Then on a real iPhone ("all is working great", in the Simulator too) the city showed MapKit's grey
+loading grid in places: at the tower on the gate, in the rise, and straight down at the handover.
+The opening counted a view as loaded if MapKit hadn't started drawing within 0.8 s and gave up
+after 3-5 s; a phone's network is slower than the Mac's. Fixed in `CityMapController.load` and
+`loadRise` (step 1), and the way back is loaded again behind the globe (step 8).
+
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
   `BubbleEngine` (settled on its first scene in `init`, passed to `BubbleStage(engine:)`, never
@@ -102,14 +108,20 @@ sized like their reference with the mark pinned left and the words centred.
   Phases: loading, gate, zooming, ready, leaving. Everything after the swipe is a function of time:
   1. Loading: a live `MKMapView` (`CityMapController`, realistic elevation) under a dark cover
      (a spinner after 1.2 s). It starts at the handover camera (straight down, 2.6 km) and jumps to
-     the rise's middle camera and then the start camera (the Eiffel Tower, 1.5 km, pitch 62,
-     heading 330), waiting each time until MapKit has fully rendered it (`isReady`: rendered, or
-     never started rendering because it had it), so the rise later shows only cached ground. As
+     every view of the rise (`riseCamera(t)`, `riseSteps` 1, 2/3, 1/3, 0) to the start camera (the
+     Eiffel Tower, 1.5 km, pitch 62, heading 330), twice (`loadRise`; the second pass finds them
+     still cached, else loads them again), at most 30 s, so the rise shows only loaded ground.
+     Each view (`CityMapController.load`) waits until MapKit has drawn it with every tile, nothing
+     is downloading and it has been quiet 0.3 s (1.5 s if its "finished loading" never comes), or
+     it never had anything to do for 1.5 s; a failed or stalled load is asked again, at most every
+     2 s. Simulated against scripted MapKit callbacks (scratch): fast 1.2 s, slow tiles wait,
+     offline gives up at the limit. As
      soon as the map has a size, `ZoomImagery` fetches satellite snapshots of the same spot
      (`MKMapSnapshotter`), each 3.2x wider, up to 6,000 km (first 1100pt at 3x, the rest 800pt
      at 2x; under 20 km drawn with realistic elevation like the live map, so the handover doesn't
-     jump). Each is measured on itself (points per radian of longitude at the city, which is
-     Web Mercator's scale both ways); the gate waits for them (at most 4 s).
+     jump; a snapshot that fails is asked for again flat). Each is measured on itself (points per
+     radian of longitude at the city, which is Web Mercator's scale both ways); the gate waits
+     for them (at most 10 s more).
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
      iOS 26) rises from below (`SpringCurve.domeIn`), lit inside like Wabi's dome in Aurora's
@@ -164,7 +176,10 @@ sized like their reference with the mark pinned left and the words centred.
      (`globeAngle`); it also drifts 1.2 degrees a second. A tap unwinds the spin (`settle`, 0.7 s,
      the short way; the globe keeps the whole turns), so friends melting into the moving Earth
      meet it. "Continue": back to Earth in the middle if a friend has it (1.1 s),
-     friends melt into Earth, the zoom runs backwards (3.6 s), the map tilts back up to the tower,
+     friends melt into Earth while MapKit loads the way back again behind the globe (`loadRise`
+     from the tower to straight down, at least 1 s, at most 9; the city is hidden under an opaque
+     cover, never made transparent, so MapKit keeps drawing it, and the dot grid sits over the
+     zoom layer), the zoom runs backwards (3.6 s), the map tilts back up to the tower,
      the dome rises again (the first frame, so a recording loops), then home.
 - Globe (`Orbit/Bubbles/HoloGlobe.swift`, shader `holoGlobe`): drawn per pixel, so it's sharp at
   any size. Geometry `GlobeMath` (pinhole camera, `distance` in Earth radii; 9 at rest, globe

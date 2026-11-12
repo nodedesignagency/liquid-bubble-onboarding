@@ -119,12 +119,13 @@ struct WorldOnboardingView: View {
                 let metrics = StageMetrics(slot: CGRect(origin: .zero, size: size))
                 let orbCenter = metrics.point(OrbitChoreography.bloomEarth.center)
                 ZStack {
-                    DotGrid(focus: orbCenter)
-                        .opacity(gridOpacity)
                     if mode == .onboarding {
                         zoomLayer(size: size)
                         gateShadeLayer(size: size)
                     }
+                    // Over the zoom: the city stays drawn, covered, under it.
+                    DotGrid(focus: orbCenter)
+                        .opacity(gridOpacity)
                     BubbleStage(scene: stageScene, look: .v3, spin: spin,
                                 centerpiece: { earth in AnyView(globeLayer(earth: earth, size: size)) },
                                 engine: engine)
@@ -208,9 +209,10 @@ struct WorldOnboardingView: View {
             let stack = stackOpacity(at: t, u: u)
             ZStack {
                 if let city {
+                    // Hidden under a cover, never made transparent, so MapKit keeps loading and
+                    // drawing it while the globe has the screen (the way back needs it).
                     CityMapView(controller: city)
-                        .overlay { Theme.worldCanvas.opacity(cityCover) }
-                        .opacity(showsCity(u: u, stack: stack) ? 1 : 0)
+                        .overlay { Theme.worldCanvas.opacity(showsCity(u: u, stack: stack) ? cityCover : 1) }
                 }
                 if let path, let u, stack > 0 {
                     ZoomStack(levels: imagery.levels, metersPerPoint: path.scale(at: u), roll: path.roll(at: u),
@@ -550,9 +552,10 @@ struct WorldOnboardingView: View {
         }
     }
 
-    /// The city, rendered behind its cover at every view the opening passes through (MapKit loads
-    /// as it goes, and the rise showed grey wedges of ground it hadn't loaded yet), and the zoom's
-    /// imagery fetched meanwhile; then the dome rises and waits for the swipe.
+    /// The city, loaded and drawn behind its cover at every view the opening passes through (MapKit
+    /// loads as it goes, and on an iPhone the city and the rise showed its grey loading grid where
+    /// it hadn't), and the zoom's imagery fetched meanwhile; then the dome rises and waits for the
+    /// swipe.
     private func playIntro() async {
         let size = stageSize
         let diagonal = hypot(size.width, size.height)
@@ -564,14 +567,11 @@ struct WorldOnboardingView: View {
         }
         // It starts at the handover camera, looking straight down: the zoom's imagery can be
         // fetched as soon as the map knows its scale.
-        _ = await waitUntil(3, { city.handoffEstimate != nil })
+        _ = await waitUntil(5, { city.handoffEstimate != nil })
         imagery.fetch(handoff: city.handoffEstimate ?? 3.5, diagonal: diagonal)
-        _ = await waitUntil(4, { city.isReady })
-        city.jump(to: EarthZoom.midCamera)
-        _ = await waitUntil(3, { city.isReady })
-        city.jump(to: EarthZoom.startCamera)
-        _ = await waitUntil(5, { city.isReady })
-        guard await waitUntil(4, { imagery.isComplete }) else { return }
+        // From the handover back to the tower, ending on the tower for the gate.
+        guard await loadRise(city, from: 1, to: 0, within: 30) else { return }
+        guard await waitUntil(10, { imagery.isComplete }) else { return }
 
         phase = .gate
         withAnimation(.easeOut(duration: 0.8)) {
@@ -662,7 +662,15 @@ struct WorldOnboardingView: View {
                 guard await pause(1.1) else { return }
             }
             stageScene = .space
-            guard await pause(1.0) else { return }
+            // While everyone melts into Earth, MapKit loads the way back again behind the globe
+            // (it may have dropped the city while the globe had the screen): every view of the
+            // rise from the tower to straight down, ending straight down, where the zoom back
+            // lands. At least the second the melt takes, longer only while the map still loads.
+            let meltEnds = now + 1.0
+            if let city, path != nil, !reduceMotion {
+                guard await loadRise(city, from: 0, to: 1, within: 9) else { return }
+            }
+            guard await pause(max(0, meltEnds - now)) else { return }
             guard let current = path, !reduceMotion else {
                 onFinish()
                 return
@@ -680,6 +688,26 @@ struct WorldOnboardingView: View {
             guard await pause(1.4) else { return }
             onFinish()
         }
+    }
+
+    /// Loads and draws every view of the rise between `from` and `to` (0 the tower, 1 straight
+    /// down), ending on `to`, twice: the second pass finds them still in MapKit's cache (else loads
+    /// them again), so the camera moving through them later shows only loaded ground. At most
+    /// `limit` seconds in all; false only if cancelled.
+    private func loadRise(_ city: CityMapController, from: Double, to: Double, within limit: Double) async -> Bool {
+        let deadline = now + limit
+        let steps: [Double] = from > to ? Array(EarthZoom.riseSteps.reversed()) : EarthZoom.riseSteps
+        for pass in 0..<2 {
+            for t in steps {
+                let left = deadline - now
+                guard left > 0 else { break }
+                _ = await city.load(EarthZoom.riseCamera(t), within: min(left, pass == 0 ? 12 : 6))
+                if Task.isCancelled { return false }
+            }
+        }
+        // Wherever the time ran out, end on the view asked for.
+        if deadline - now <= 0 { city.jump(to: EarthZoom.riseCamera(to)) }
+        return !Task.isCancelled
     }
 
     /// Waits, and says whether to carry on (false once the sequence was cancelled).
