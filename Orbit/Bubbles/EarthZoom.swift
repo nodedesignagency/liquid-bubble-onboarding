@@ -187,25 +187,32 @@ final class CityMapController: NSObject, MKMapViewDelegate {
     /// that view (the map's size, scale and 3D style), which MapKit finishes only once every tile
     /// is in, and keeps them for the map. The map's own callbacks said "loaded" while an iPhone
     /// still showed the grey loading grid; a snapshot can't finish with a tile missing. A failed
-    /// one is asked again; at most `limit` seconds. True if it finished.
-    @MainActor
-    func prefetch(_ camera: MKMapCamera, within limit: Double) async -> Bool {
+    /// one is asked again; at most `limit` seconds. The snapshot, if it finished.
+    @MainActor @discardableResult
+    func prefetch(_ camera: MKMapCamera, within limit: Double) async -> MKMapSnapshotter.Snapshot? {
         let size = mapView.bounds.size
-        guard size.width > 0, size.height > 0 else { return false }
+        guard size.width > 0, size.height > 0 else { return nil }
         let scale = mapView.traitCollection.displayScale > 0 ? mapView.traitCollection.displayScale : 3
         let deadline = Date.timeIntervalSinceReferenceDate + limit
         while Date.timeIntervalSinceReferenceDate < deadline {
             let fetch = MapPrefetch(camera: camera, size: size, scale: scale)
             while !fetch.finished, Date.timeIntervalSinceReferenceDate < deadline {
                 try? await Task.sleep(for: .milliseconds(60))
-                if Task.isCancelled { fetch.cancel(); return false }
+                if Task.isCancelled { fetch.cancel(); return nil }
             }
-            if fetch.succeeded { return true }
+            if let snapshot = fetch.snapshot { return snapshot }
             fetch.cancel()
             try? await Task.sleep(for: .seconds(0.5))
-            if Task.isCancelled { return false }
+            if Task.isCancelled { return nil }
         }
-        return false
+        return nil
+    }
+
+    /// Where the city is on the live map, in its points.
+    func cityPoint() -> CGPoint? {
+        guard mapView.bounds.width > 0 else { return nil }
+        let point = mapView.convert(EarthZoom.city, toPointTo: mapView)
+        return point.x.isFinite && point.y.isFinite ? point : nil
     }
 
     func mapViewWillStartLoadingMap(_ mapView: MKMapView) {
@@ -266,7 +273,7 @@ final class CityMapController: NSObject, MKMapViewDelegate {
 /// One snapshot of a view of the live map, taken only to download its tiles (see `prefetch`).
 private final class MapPrefetch {
     private(set) var finished = false
-    private(set) var succeeded = false
+    private(set) var snapshot: MKMapSnapshotter.Snapshot?
     private let snapshotter: MKMapSnapshotter
 
     init(camera: MKMapCamera, size: CGSize, scale: CGFloat) {
@@ -278,7 +285,7 @@ private final class MapPrefetch {
         options.traitCollection = UITraitCollection(displayScale: scale)
         snapshotter = MKMapSnapshotter(options: options)
         snapshotter.start(with: .main) { [weak self] snapshot, _ in
-            self?.succeeded = snapshot != nil
+            self?.snapshot = snapshot
             self?.finished = true
         }
     }

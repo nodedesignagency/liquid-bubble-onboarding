@@ -118,7 +118,9 @@ starved it on the phone), and a view counts as loaded when MapKit says it finish
 goes quiet, not on a full render. That build still showed the grey grid on the phone in the same
 three places ("fix this bro fast pls"): MapKit's callbacks said loaded too early there. So every
 view of the tilt is now downloaded first with a snapshot of exactly that view (which can't finish
-with a tile missing), and the real moves play once under the cover before the gate.
+with a tile missing), and the real moves play once under the cover before the gate. Still grey
+on the tower at the gate ("dont waste my time just fix it"), so the gate now shows that finished
+snapshot of the tower view over the live map (`towerShot`), handing over while both stand still.
 
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
@@ -142,7 +144,10 @@ with a tile missing), and the real moves play once under the cover before the ga
      drawing (or said nothing for 1 s) and been quiet 0.6 s (0.2 after a full render), or had
      nothing to do for 1.5 s; a failed load is asked again at most every 2 s. Not on a full render
      alone: in 3D MapKit hardly ever reports one. Simulated against scripted MapKit callbacks
-     (scratch). Untested on the phone yet.
+     (scratch). The tower's snapshot is kept (`towerShot`) and shown over the live map while the
+     gate waits (lined up on the city's point, `placeTowerShot`); on the swipe it fades out in
+     0.25 s while both stand still (the rise starts 0.3 s after), and it fades back in once the
+     map has tilted back up at the end. Untested on the phone yet.
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
      iOS 26) rises from below (`SpringCurve.domeIn`), lit inside like Wabi's dome in Aurora's

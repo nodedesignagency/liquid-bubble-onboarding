@@ -55,6 +55,13 @@ struct WorldOnboardingView: View {
     /// Made when the onboarding starts (never on the home screen): an `MKMapView` is heavy, and
     /// a property's initial value is built every time the view is.
     @State private var city: CityMapController?
+    /// A finished picture of the tower view (the gate), over the live map while the gate waits:
+    /// on an iPhone the live map kept showing its grey loading grid there. The same camera, size
+    /// and 3D style, so it reads as the map itself; it hands over to the live map, standing still,
+    /// in the moment after the swipe, and comes back once the map has tilted back up at the end.
+    @State private var towerShot: MKMapSnapshotter.Snapshot?
+    @State private var towerShotOffset = CGSize.zero
+    @State private var towerShotOpacity = 0.0
     @State private var imagery = ZoomImagery()
     @State private var stageSize = CGSize.zero
     /// The dark cover over the city until it has rendered, and a spinner if that takes a while.
@@ -213,6 +220,15 @@ struct WorldOnboardingView: View {
                     // Hidden under a cover, never made transparent, so MapKit keeps loading and
                     // drawing it while the globe has the screen (the way back needs it).
                     CityMapView(controller: city)
+                        .overlay {
+                            if let shot = towerShot {
+                                Image(uiImage: shot.image)
+                                    .resizable()
+                                    .frame(width: shot.image.size.width, height: shot.image.size.height)
+                                    .offset(towerShotOffset)
+                                    .opacity(towerShotOpacity)
+                            }
+                        }
                         .overlay { Theme.worldCanvas.opacity(showsCity(u: u, stack: stack) ? cityCover : 1) }
                 }
                 if let path, let u, stack > 0 {
@@ -576,8 +592,9 @@ struct WorldOnboardingView: View {
         for t in [0, 1, 0.5, 0.25, 0.75] {
             let left = prefetchEnds - now
             guard left > 0 else { break }
-            _ = await city.prefetch(EarthZoom.riseCamera(t), within: min(left, 15))
+            let shot = await city.prefetch(EarthZoom.riseCamera(t), within: min(left, 15))
             if Task.isCancelled { return }
+            if t == 0 { towerShot = shot }
         }
         imagery.fetch(handoff: city.handoffEstimate ?? 3.5, diagonal: diagonal)
         guard await waitUntil(25, { imagery.isComplete }) else { return }
@@ -587,6 +604,8 @@ struct WorldOnboardingView: View {
         _ = await city.move(to: EarthZoom.handoffCamera, within: 5)
         _ = await city.move(to: EarthZoom.startCamera, within: 5)
         if Task.isCancelled { return }
+        placeTowerShot(on: city)
+        towerShotOpacity = 1
 
         phase = .gate
         withAnimation(.easeOut(duration: 0.8)) {
@@ -615,6 +634,8 @@ struct WorldOnboardingView: View {
         domeExitFrom = domeOffset(at: t, DomeGeometry(size: stageSize))
         domeExitAt = t
         withAnimation(.easeInOut(duration: 0.7)) { gateShade = 0 }
+        // The live map takes over from the picture while both stand still, before the rise.
+        withAnimation(.easeInOut(duration: 0.25)) { towerShotOpacity = 0 }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
         sequence?.cancel()
@@ -699,9 +720,22 @@ struct WorldOnboardingView: View {
             withAnimation(.easeInOut(duration: EarthZoom.rise)) { gateShade = 1 }
             guard await pause(EarthZoom.rise * 0.6) else { return }
             showDome(after: 0)
-            guard await pause(1.4) else { return }
+            // Once the map has tilted back up, the picture again, so the last frame is whole.
+            guard await pause(EarthZoom.rise * 0.4 + 0.05) else { return }
+            if let city { placeTowerShot(on: city) }
+            withAnimation(.easeInOut(duration: 0.3)) { towerShotOpacity = 1 }
+            guard await pause(1.4 - EarthZoom.rise * 0.4 - 0.05) else { return }
             onFinish()
         }
+    }
+
+    /// Lines the tower picture up with the live map (the city on the same point), in case MapKit
+    /// centres its view a little differently from the snapshot.
+    private func placeTowerShot(on city: CityMapController) {
+        guard let shot = towerShot, let live = city.cityPoint() else { return }
+        let inShot = shot.point(for: EarthZoom.city)
+        let dx = live.x - inShot.x, dy = live.y - inShot.y
+        towerShotOffset = hypot(dx, dy) < 60 ? CGSize(width: dx, height: dy) : .zero
     }
 
     /// Loads every view of the rise, ending on the tower (`towardTower`) or straight down, twice:
