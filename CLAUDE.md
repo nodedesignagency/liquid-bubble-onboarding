@@ -22,6 +22,11 @@ Bump and Snapchat, told with liquid "metaball" bubbles. See README.md for the ov
   when Xcode has rewritten the shared scheme (it does on opening); then the phone keeps the old
   build. The fix is `git fetch origin && git reset --hard origin/claude/nice-cori-ypokiu` (they
   don't edit code; Xcode may then need their team again under Signing & Capabilities).
+- `scripts/phone.sh` does all of that in one go: resets to the branch, finds their team in their
+  Apple Development certificate (or `TEAM=...`), builds with `-allowProvisioningUpdates`, installs
+  with `devicectl` on the plugged-in iPhone and opens it. Written after three map fixes looked
+  "all same" on the phone: after the reset Xcode had lost the team, so its Run failed and the
+  phone kept the old build. Give them this command for the phone.
 - Run from Xcode on their iPhone, the app stopped on "hit program assert" (a Metal API Validation
   assertion: "...must be MTLPixelFormatInvalid, as no texture is set", inside Apple's rendering,
   most likely MapKit's 3D map). Validation only runs under Xcode's debugger, so the shared scheme

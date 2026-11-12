@@ -600,6 +600,11 @@ struct WorldOnboardingView: View {
         guard await waitUntil(25, { imagery.isComplete }) else { return }
         // From straight down back to the tower, where the gate waits.
         guard await loadRise(city, towardTower: true, within: 25) else { return }
+        // The gate's picture is the one thing that must be there: ask again if it failed.
+        if towerShot == nil {
+            towerShot = await city.prefetch(EarthZoom.startCamera, within: 20)
+            if Task.isCancelled { return }
+        }
         // The real moves once under the cover, so MapKit has drawn every frame of them.
         _ = await city.move(to: EarthZoom.handoffCamera, within: 5)
         _ = await city.move(to: EarthZoom.startCamera, within: 5)
