@@ -126,6 +126,12 @@ view of the tilt is now downloaded first with a snapshot of exactly that view (w
 with a tile missing), and the real moves play once under the cover before the gate. Still grey
 on the tower at the gate ("dont waste my time just fix it"), so the gate now shows that finished
 snapshot of the tower view over the live map (`towerShot`), handing over while both stand still.
+That didn't help either (the phone had the new build, checked with `scripts/phone.sh`). Their
+three phone photos (pulled from the transcript) showed why: the grey is the same block every time,
+south and east of a corner by the tower (on z15 tile lines), at the tower, mid-rise and straight
+down, while the Simulator draws the Champ de Mars fine. Apple's 3D city data for that block never
+loads on their phone, so waiting can't fix it. The opening now checks for holes
+(`EarthZoom.holeFraction`) and falls back to flat satellite imagery (`EarthZoom.realistic`).
 
 - Screen (`Orbit/Onboarding/WorldOnboardingView.swift`): dark all the way (`Theme.worldCanvas`
   #040406, white type, `preferredColorScheme(.dark)` for v3 in `RootView`). The screen owns the
@@ -152,7 +158,12 @@ snapshot of the tower view over the live map (`towerShot`), handing over while b
      (scratch). The tower's snapshot is kept (`towerShot`) and shown over the live map while the
      gate waits (lined up on the city's point, `placeTowerShot`); on the swipe it fades out in
      0.25 s while both stand still (the rise starts 0.3 s after), and it fades back in once the
-     map has tilted back up at the end. Untested on the phone yet.
+     map has tilted back up at the end. Holes: the tower's 3D snapshot is checked first
+     (`hasHoles`: missing, or over 12% flat colourless 16pt blocks, the grey grid; the city in the
+     Simulator recordings never passed 5%), and the live map at straight down and at the tower
+     after the rehearsal (`showsHoles`, a `drawHierarchy` capture; ignored over 92%, a blank
+     capture). Any holes: `useRealistic(false)` (flat satellite for the live map, the prefetches
+     and every zoom snapshot) and the loading runs again (`prepareCity`). Untested on the phone yet.
   2. Gate: the cover fades, a soft shade comes in at the top and bottom, and a big dome of clear
      Liquid Glass (`GateDome`, radius 62% of the width, top at 76% of the height; frosted before
      iOS 26) rises from below (`SpringCurve.domeIn`), lit inside like Wabi's dome in Aurora's

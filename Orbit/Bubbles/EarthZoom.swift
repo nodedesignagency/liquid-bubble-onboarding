@@ -60,6 +60,62 @@ enum EarthZoom {
     /// Snapshots narrower than this are drawn in 3D like the live map (the same photogrammetry and
     /// grading), so the handover from the map doesn't jump; wider ones are flat satellite imagery.
     static let realisticSpan: Double = 20_000
+
+    /// Apple's 3D city ("realistic" imagery) for the live map and the nearest snapshots. On the
+    /// user's iPhone a block of it round the tower never loaded (the same block south and east of
+    /// it every time, however long the wait, in the live map and in snapshots; fine in the
+    /// Simulator), so the opening checks for holes and falls back to flat satellite imagery.
+    static var realistic = true
+    static var imagery: MKImageryMapConfiguration {
+        MKImageryMapConfiguration(elevationStyle: realistic ? .realistic : .flat)
+    }
+
+    /// How much of a picture of the map is MapKit's grey loading grid (or nothing): flat,
+    /// colourless patches, which a photo of a city doesn't have. Measured on a small copy in
+    /// blocks about 16pt wide; above 12% counts as holes. On the user's Simulator recordings the
+    /// city never went above 5%; their iPhone's grey block covered 16-47% even in photos of the
+    /// screen. nil if it can't be read.
+    static func holeFraction(_ image: UIImage) -> Double? {
+        guard let cg = image.cgImage, cg.width > 0, cg.height > 0 else { return nil }
+        let w = 96, h = max(8, Int(Double(cg.height) / Double(cg.width) * 96))
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                          bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.interpolationQuality = .medium
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drawn else { return nil }
+        let block = 4
+        var flat = 0, total = 0
+        for by in stride(from: 0, through: h - block, by: block) {
+            for bx in stride(from: 0, through: w - block, by: block) {
+                var low = [255, 255, 255], high = [0, 0, 0], tint = 0
+                for y in by..<(by + block) {
+                    for x in bx..<(bx + block) {
+                        let i = (y * w + x) * 4
+                        let rgb = [Int(pixels[i]), Int(pixels[i + 1]), Int(pixels[i + 2])]
+                        for c in 0..<3 {
+                            low[c] = min(low[c], rgb[c])
+                            high[c] = max(high[c], rgb[c])
+                        }
+                        tint = max(tint, rgb.max()! - rgb.min()!)
+                    }
+                }
+                total += 1
+                if (0..<3).allSatisfy({ high[$0] - low[$0] <= 10 }) && tint <= 24 { flat += 1 }
+            }
+        }
+        return total > 0 ? Double(flat) / Double(total) : nil
+    }
+
+    /// A snapshot that didn't come, or came with holes in it.
+    static func hasHoles(_ snapshot: MKMapSnapshotter.Snapshot?) -> Bool {
+        guard let snapshot else { return true }
+        return (holeFraction(snapshot.image) ?? 0) > 0.12
+    }
     static let earthRadius: Double = 6_371_000
 
     /// The point `meters` from `start` along `bearing` (degrees clockwise from north).
@@ -101,7 +157,7 @@ final class CityMapController: NSObject, MKMapViewDelegate {
     override init() {
         super.init()
         mapView.delegate = self
-        mapView.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .realistic)
+        mapView.preferredConfiguration = EarthZoom.imagery
         mapView.isUserInteractionEnabled = false
         mapView.showsCompass = false
         mapView.showsScale = false
@@ -208,6 +264,26 @@ final class CityMapController: NSObject, MKMapViewDelegate {
         return nil
     }
 
+    /// Switches the live map between Apple's 3D city and flat satellite imagery.
+    func useRealistic(_ on: Bool) {
+        EarthZoom.realistic = on
+        resetLoadState()
+        mapView.preferredConfiguration = EarthZoom.imagery
+    }
+
+    /// Whether the live map, as it is now, shows holes (MapKit's grey loading grid). False if it
+    /// can't tell (a capture that comes back blank).
+    func showsHoles() -> Bool {
+        guard mapView.bounds.width > 0, mapView.window != nil else { return false }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(bounds: mapView.bounds, format: format).image { _ in
+            mapView.drawHierarchy(in: mapView.bounds, afterScreenUpdates: false)
+        }
+        guard let fraction = EarthZoom.holeFraction(image) else { return false }
+        return fraction > 0.12 && fraction < 0.92
+    }
+
     /// Where the city is on the live map, in its points.
     func cityPoint() -> CGPoint? {
         guard mapView.bounds.width > 0 else { return nil }
@@ -280,7 +356,7 @@ private final class MapPrefetch {
         let options = MKMapSnapshotter.Options()
         options.camera = camera
         options.size = size
-        options.preferredConfiguration = MKImageryMapConfiguration(elevationStyle: .realistic)
+        options.preferredConfiguration = EarthZoom.imagery
         options.pointOfInterestFilter = .excludingAll
         options.traitCollection = UITraitCollection(displayScale: scale)
         snapshotter = MKMapSnapshotter(options: options)
@@ -345,7 +421,7 @@ final class ZoomImagery {
         for (index, span) in spans.enumerated() {
             // The first is seen largest, right as MapKit hands over, so it gets the most pixels.
             request(span: span, side: index == 0 ? 1_100 : 800, scale: index == 0 ? 3 : 2,
-                    realistic: span < EarthZoom.realisticSpan)
+                    realistic: span < EarthZoom.realisticSpan && EarthZoom.realistic)
         }
     }
 

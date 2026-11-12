@@ -587,28 +587,27 @@ struct WorldOnboardingView: View {
         // It starts at the handover camera, looking straight down: the zoom's imagery can be
         // fetched as soon as the map knows its scale.
         _ = await waitUntil(5, { city.handoffEstimate != nil })
-        // The tower (the gate), straight down (the handover), then the views between.
-        let prefetchEnds = now + 45
-        for t in [0, 1, 0.5, 0.25, 0.75] {
-            let left = prefetchEnds - now
-            guard left > 0 else { break }
-            let shot = await city.prefetch(EarthZoom.riseCamera(t), within: min(left, 15))
-            if Task.isCancelled { return }
-            if t == 0 { towerShot = shot }
-        }
-        imagery.fetch(handoff: city.handoffEstimate ?? 3.5, diagonal: diagonal)
-        guard await waitUntil(25, { imagery.isComplete }) else { return }
-        // From straight down back to the tower, where the gate waits.
-        guard await loadRise(city, towardTower: true, within: 25) else { return }
-        // The gate's picture is the one thing that must be there: ask again if it failed.
-        if towerShot == nil {
-            towerShot = await city.prefetch(EarthZoom.startCamera, within: 20)
-            if Task.isCancelled { return }
-        }
-        // The real moves once under the cover, so MapKit has drawn every frame of them.
-        _ = await city.move(to: EarthZoom.handoffCamera, within: 5)
-        _ = await city.move(to: EarthZoom.startCamera, within: 5)
+        // Apple's 3D city first. On the user's iPhone a block of it round the tower never loaded
+        // (the same block every time), so if the tower's picture comes back with holes in it,
+        // flat satellite imagery instead, which loads.
+        var shot = await city.prefetch(EarthZoom.startCamera, within: EarthZoom.realistic ? 12 : 15)
         if Task.isCancelled { return }
+        if EarthZoom.realistic, EarthZoom.hasHoles(shot) {
+            city.useRealistic(false)
+            shot = await city.prefetch(EarthZoom.startCamera, within: 15)
+            if Task.isCancelled { return }
+        }
+        towerShot = shot
+        guard await prepareCity(city, diagonal: diagonal) else { return }
+        // The live map itself, at the tower and straight down: if it still shows holes, flat
+        // imagery and everything again.
+        if EarthZoom.realistic, city.showsHoles() || cityHadHoles {
+            city.useRealistic(false)
+            towerShot = await city.prefetch(EarthZoom.startCamera, within: 15)
+            if Task.isCancelled { return }
+            imagery = ZoomImagery()
+            guard await prepareCity(city, diagonal: diagonal) else { return }
+        }
         placeTowerShot(on: city)
         towerShotOpacity = 1
 
@@ -732,6 +731,32 @@ struct WorldOnboardingView: View {
             guard await pause(1.4 - EarthZoom.rise * 0.4 - 0.05) else { return }
             onFinish()
         }
+    }
+
+    /// Set when the live map showed holes straight down during the rehearsal.
+    @State private var cityHadHoles = false
+
+    /// The rest of the loading, in the imagery chosen: the other views of the rise downloaded,
+    /// the zoom's snapshots, the live map loading its views, and the real moves once under the
+    /// cover. False only if cancelled.
+    private func prepareCity(_ city: CityMapController, diagonal: CGFloat) async -> Bool {
+        let prefetchEnds = now + 35
+        for t in [1, 0.5, 0.25, 0.75] {
+            let left = prefetchEnds - now
+            guard left > 0 else { break }
+            await city.prefetch(EarthZoom.riseCamera(t), within: min(left, 12))
+            if Task.isCancelled { return false }
+        }
+        imagery.fetch(handoff: city.handoffEstimate ?? 3.5, diagonal: diagonal)
+        guard await waitUntil(25, { imagery.isComplete }) else { return false }
+        // From straight down back to the tower, where the gate waits.
+        guard await loadRise(city, towardTower: true, within: 25) else { return false }
+        // The real moves once under the cover, so MapKit has drawn every frame of them.
+        cityHadHoles = false
+        _ = await city.move(to: EarthZoom.handoffCamera, within: 5)
+        if EarthZoom.realistic, city.showsHoles() { cityHadHoles = true }
+        _ = await city.move(to: EarthZoom.startCamera, within: 5)
+        return !Task.isCancelled
     }
 
     /// Lines the tower picture up with the live map (the city on the same point), in case MapKit
